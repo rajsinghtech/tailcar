@@ -1,52 +1,52 @@
 <svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
   <g transform="translate(100, 100)">
     <!-- Main wheel ring -->
-    <path d="M 0,-80 A 80,80 0 1,1 0,80 A 80,80 0 1,1 0,-80 M 0,-55 A 55,55 0 1,0 0,55 A 55,55 0 1,0 0,-55 Z" fill="#141414"/>
+    <path d="M 0,-80 A 80,80 0 1,1 0,80 A 80,80 0 1,1 0,-80 M 0,-55 A 55,55 0 1,0 0,55 A 55,55 0 1,0 0,-55 Z" fill="#D2B48C"/>
 
     <!-- 8 handles extending from the wheel -->
     <!-- Top handle -->
-    <rect x="-8" y="-95" width="16" height="20" rx="8" fill="#141414"/>
+    <rect x="-8" y="-95" width="16" height="20" rx="8" fill="#D2B48C"/>
 
     <!-- Bottom handle -->
-    <rect x="-8" y="75" width="16" height="20" rx="8" fill="#141414"/>
+    <rect x="-8" y="75" width="16" height="20" rx="8" fill="#D2B48C"/>
 
     <!-- Right handle -->
-    <rect x="75" y="-8" width="20" height="16" rx="8" fill="#141414"/>
+    <rect x="75" y="-8" width="20" height="16" rx="8" fill="#D2B48C"/>
 
     <!-- Left handle -->
-    <rect x="-95" y="-8" width="20" height="16" rx="8" fill="#141414"/>
+    <rect x="-95" y="-8" width="20" height="16" rx="8" fill="#D2B48C"/>
 
     <!-- Top-right diagonal handle -->
     <g transform="rotate(45)">
-      <rect x="-8" y="-95" width="16" height="20" rx="8" fill="#141414"/>
+      <rect x="-8" y="-95" width="16" height="20" rx="8" fill="#D2B48C"/>
     </g>
 
     <!-- Top-left diagonal handle -->
     <g transform="rotate(-45)">
-      <rect x="-8" y="-95" width="16" height="20" rx="8" fill="#141414"/>
+      <rect x="-8" y="-95" width="16" height="20" rx="8" fill="#D2B48C"/>
     </g>
 
     <!-- Bottom-right diagonal handle -->
     <g transform="rotate(135)">
-      <rect x="-8" y="-95" width="16" height="20" rx="8" fill="#141414"/>
+      <rect x="-8" y="-95" width="16" height="20" rx="8" fill="#D2B48C"/>
     </g>
 
     <!-- Bottom-left diagonal handle -->
     <g transform="rotate(-135)">
-      <rect x="-8" y="-95" width="16" height="20" rx="8" fill="#141414"/>
+      <rect x="-8" y="-95" width="16" height="20" rx="8" fill="#D2B48C"/>
     </g>
 
     <!-- 3x3 grid of dots in the center -->
-    <circle cx="-18" cy="-18" r="6.5" fill="#141414"/>
-    <circle cx="0" cy="-18" r="6.5" fill="#141414"/>
-    <circle cx="18" cy="-18" r="6.5" fill="#141414"/>
+    <circle cx="-18" cy="-18" r="6.5" fill="#D2B48C"/>
+    <circle cx="0" cy="-18" r="6.5" fill="#D2B48C"/>
+    <circle cx="18" cy="-18" r="6.5" fill="#D2B48C"/>
 
-    <circle cx="-18" cy="0" r="6.5" fill="#141414"/>
-    <circle cx="0" cy="0" r="6.5" fill="#141414"/>
-    <circle cx="18" cy="0" r="6.5" fill="#141414"/>
+    <circle cx="-18" cy="0" r="6.5" fill="#D2B48C"/>
+    <circle cx="0" cy="0" r="6.5" fill="#D2B48C"/>
+    <circle cx="18" cy="0" r="6.5" fill="#D2B48C"/>
 
-    <circle cx="-18" cy="18" r="6.5" fill="#141414"/>
-    <circle cx="0" cy="18" r="6.5" fill="#141414"/>
-    <circle cx="18" cy="18" r="6.5" fill="#141414"/>
+    <circle cx="-18" cy="18" r="6.5" fill="#D2B48C"/>
+    <circle cx="0" cy="18" r="6.5" fill="#D2B48C"/>
+    <circle cx="18" cy="18" r="6.5" fill="#D2B48C"/>
   </g>
 </svg>

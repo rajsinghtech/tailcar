@@ -71,10 +71,8 @@ spec:
     namespace: default
 
   tailscale:
-    autoApprove: true
     tags:
       - "tag:k8s"
-    image: "ghcr.io/tailscale/tailscale:latest"
 ```
 
 ```bash
@@ -118,18 +116,6 @@ Create an OAuth client in the [Tailscale admin console](https://login.tailscale.
 - `all:write` - Full access to manage devices and keys
 - `devices:write` - Create and modify devices
 - `keys:write` - Create and manage authentication keys
-
-### Pod Injection Behavior
-
-When you annotate a pod with `tailcar.rajsingh.info/inject: "true"`, the webhook automatically injects:
-
-**Init Container:**
-- Configures `net.ipv4.ip_forward` and `net.ipv6.conf.all.forwarding`
-- Ensures proper IP forwarding for Tailscale
-
-**Sidecar Container:**
-- Runs Tailscale daemon with `NET_ADMIN` capability
-- Connects to the specified Tailnet using ephemeral auth key
 
 ---
 
