@@ -135,18 +135,6 @@ spec:
             --type='json' \
             -p='[{"op": "replace", "path": "/webhooks/0/clientConfig/caBundle", "value":"'"${CA_BUNDLE}"'"}]'
 
-          # Patch validating webhook
-          VALIDATOR_NAME="{{ include "tailcar.fullname" . }}-validator"
-          if kubectl get validatingwebhookconfiguration ${VALIDATOR_NAME} &>/dev/null; then
-            echo "Updating ValidatingWebhookConfiguration with CA bundle..."
-            kubectl patch validatingwebhookconfiguration ${VALIDATOR_NAME} \
-              --type='json' \
-              -p='[{"op": "add", "path": "/webhooks/0/clientConfig/caBundle", "value":"'"${CA_BUNDLE}"'"}]' || \
-            kubectl patch validatingwebhookconfiguration ${VALIDATOR_NAME} \
-              --type='json' \
-              -p='[{"op": "replace", "path": "/webhooks/0/clientConfig/caBundle", "value":"'"${CA_BUNDLE}"'"}]'
-          fi
-
           echo "Webhook certificates generated and configured successfully!"
 
           # Cleanup

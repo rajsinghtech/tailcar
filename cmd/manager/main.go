@@ -99,17 +99,6 @@ func main() {
 		Handler: podMutator,
 	})
 
-	tailnetValidator := &tailcarwebhook.TailnetValidator{
-		Client: mgr.GetClient(),
-	}
-	if err := tailnetValidator.InjectDecoder(decoder); err != nil {
-		setupLog.Error(err, "unable to inject decoder into tailnet validator")
-		os.Exit(1)
-	}
-	mgr.GetWebhookServer().Register("/validate-tailcar-rajsingh-info-v1alpha1-tailnet", &webhook.Admission{
-		Handler: tailnetValidator,
-	})
-
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)

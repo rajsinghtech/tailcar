@@ -82,6 +82,13 @@ func (r *TailnetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
+	// Validate Tailnet spec
+	if err := r.validateTailnet(tailnet); err != nil {
+		logger.Error(err, "Tailnet validation failed")
+		return r.updateStatus(ctx, tailnet, metav1.ConditionFalse, ConditionTypeReady,
+			"ValidationFailed", err.Error())
+	}
+
 	tsClient, err := r.getTailscaleClient(ctx, tailnet)
 	if err != nil {
 		logger.Error(err, "Failed to get Tailscale client")
@@ -321,6 +328,20 @@ func (r *TailnetReconciler) updateInjectedPodsCount(ctx context.Context, tailnet
 	}
 
 	tailnet.Status.InjectedPods = count
+	return nil
+}
+
+func (r *TailnetReconciler) validateTailnet(tailnet *tailcarv1alpha1.Tailnet) error {
+	if tailnet.Spec.Tailscale.StateDir != "" && tailnet.Spec.Tailscale.StateDir[0] != '/' {
+		return fmt.Errorf("tailscale.stateDir must be an absolute path")
+	}
+
+	for i, tag := range tailnet.Spec.Tailscale.Tags {
+		if len(tag) < 4 || tag[:4] != "tag:" {
+			return fmt.Errorf("tailscale.tags[%d] must start with 'tag:' (got: %s)", i, tag)
+		}
+	}
+
 	return nil
 }
 
