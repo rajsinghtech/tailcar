@@ -5,6 +5,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// TailnetSpec defines the desired state of Tailnet.
 type TailnetSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:default="-"
@@ -17,6 +18,7 @@ type TailnetSpec struct {
 	Tailscale TailscaleConfig `json:"tailscale"`
 }
 
+// SecretReference references a secret containing OAuth credentials.
 type SecretReference struct {
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
@@ -25,6 +27,7 @@ type SecretReference struct {
 	Namespace string `json:"namespace"`
 }
 
+// TailscaleConfig contains Tailscale-specific configuration.
 type TailscaleConfig struct {
 	// +kubebuilder:default=true
 	// +optional
@@ -45,6 +48,7 @@ type TailscaleConfig struct {
 	Image string `json:"image,omitempty"`
 }
 
+// TailnetStatus defines the observed state of Tailnet.
 type TailnetStatus struct {
 	// +optional
 	// +listType=map
@@ -72,6 +76,7 @@ type TailnetStatus struct {
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
+// Tailnet is the Schema for the tailnets API.
 type Tailnet struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -82,6 +87,7 @@ type Tailnet struct {
 
 // +kubebuilder:object:root=true
 
+// TailnetList contains a list of Tailnet.
 type TailnetList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

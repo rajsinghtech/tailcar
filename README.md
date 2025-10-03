@@ -1,7 +1,7 @@
 # Tailcar
 
 <div align="center">
-  <img width="200" alt="Tailcar Logo" src="https://raw.githubusercontent.com/rajsinghtech/tailcar/main/assets/logo.svg">
+  <img width="200" alt="Tailcar Logo" src="./assets/logo.svg">
 
   [![Go Report Card](https://goreportcard.com/badge/github.com/rajsinghtech/tailcar)](https://goreportcard.com/report/github.com/rajsinghtech/tailcar)
   [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -20,14 +20,29 @@
 - Kubernetes cluster (v1.20+)
 - `kubectl` configured
 - Helm 3.x (recommended)
+- [cert-manager](https://cert-manager.io/) (v1.0+) - For webhook certificate management
 - Tailscale account with OAuth client
+
+### Install cert-manager
+
+Tailcar uses cert-manager to manage webhook certificates. Install it first if not already present:
+
+```bash
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
+```
+
+Wait for cert-manager to be ready:
+
+```bash
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=300s
+```
 
 ### Install with Helm (Recommended)
 
 ```bash
 # Create namespace and install latest stable release
 kubectl create namespace tailcar-system
-helm install tailcar oci://ghcr.io/rajsinghtech/tailcar/charts/tailcar \
+helm install tailcar oci://ghcr.io/rajsinghtech/tailcar-helm \
   --namespace tailcar-system
 ```
 

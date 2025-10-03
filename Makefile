@@ -22,6 +22,14 @@ fmt: ## Run go fmt against code
 vet: ## Run go vet against code
 	go vet ./...
 
+.PHONY: lint
+lint: golangci-lint ## Run golangci-lint
+	$(GOLANGCI_LINT) run ./...
+
+.PHONY: lint-fix
+lint-fix: golangci-lint ## Run golangci-lint and auto-fix issues
+	$(GOLANGCI_LINT) run --fix ./...
+
 .PHONY: test
 test: manifests generate fmt vet ## Run tests
 	go test ./... -coverprofile cover.out
@@ -94,6 +102,15 @@ CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 .PHONY: controller-gen
 controller-gen: ## Download controller-gen locally if necessary
 	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.16.5)
+
+GOLANGCI_LINT = $(shell pwd)/bin/golangci-lint
+.PHONY: golangci-lint
+golangci-lint: ## Download golangci-lint locally if necessary
+	@[ -f $(GOLANGCI_LINT) ] || { \
+	set -e ;\
+	echo "Downloading golangci-lint" ;\
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(shell dirname $(GOLANGCI_LINT)) v2.2.0 ;\
+	}
 
 define go-get-tool
 @[ -f $(1) ] || { \

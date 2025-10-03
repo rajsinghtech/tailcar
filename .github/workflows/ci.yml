@@ -1,10 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-      - 'release/*'
   pull_request:
     branches:
       - main
@@ -30,7 +26,9 @@ jobs:
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
-          path: ~/go/pkg/mod
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
@@ -55,7 +53,6 @@ jobs:
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
-        if: github.event_name == 'pull_request'
         with:
           name: coverage-report
           path: coverage.html
@@ -76,7 +73,9 @@ jobs:
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
-          path: ~/go/pkg/mod
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
@@ -115,4 +114,3 @@ jobs:
           helm lint helm/tailcar
           helm template test helm/tailcar --dry-run > /dev/null
           echo "Helm chart validation passed"
-

@@ -22,20 +22,28 @@ import (
 const (
 	tailnetFinalizer = "tailcar.rajsingh.info/finalizer"
 
-	// Condition types
-	ConditionTypeReady          = "Ready"
-	ConditionTypeOAuthValid     = "OAuthValid"
+	// ConditionTypeReady indicates the Tailnet is ready.
+	ConditionTypeReady = "Ready"
+	// ConditionTypeOAuthValid indicates OAuth credentials are valid.
+	ConditionTypeOAuthValid = "OAuthValid"
+	// ConditionTypeAuthKeyCreated indicates auth key was created.
 	ConditionTypeAuthKeyCreated = "AuthKeyCreated"
 
-	// Condition reasons
+	// ReasonOAuthValidationFailed indicates OAuth validation failed.
 	ReasonOAuthValidationFailed = "OAuthValidationFailed"
-	ReasonOAuthValid            = "OAuthValid"
+	// ReasonOAuthValid indicates OAuth validation succeeded.
+	ReasonOAuthValid = "OAuthValid"
+	// ReasonAuthKeyCreationFailed indicates auth key creation failed.
 	ReasonAuthKeyCreationFailed = "AuthKeyCreationFailed"
-	ReasonAuthKeyCreated        = "AuthKeyCreated"
-	ReasonReconcileSuccess      = "ReconcileSuccess"
-	ReasonReconcileError        = "ReconcileError"
+	// ReasonAuthKeyCreated indicates auth key was created.
+	ReasonAuthKeyCreated = "AuthKeyCreated"
+	// ReasonReconcileSuccess indicates reconciliation succeeded.
+	ReasonReconcileSuccess = "ReconcileSuccess"
+	// ReasonReconcileError indicates reconciliation failed.
+	ReasonReconcileError = "ReconcileError"
 )
 
+// TailnetReconciler reconciles Tailnet objects.
 type TailnetReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -47,6 +55,7 @@ type TailnetReconciler struct {
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
+// Reconcile handles Tailnet reconciliation.
 func (r *TailnetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -59,7 +68,7 @@ func (r *TailnetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	if !tailnet.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !tailnet.GetDeletionTimestamp().IsZero() {
 		return r.handleDeletion(ctx, tailnet)
 	}
 
@@ -289,6 +298,7 @@ func (r *TailnetReconciler) updateStatus(ctx context.Context, tailnet *tailcarv1
 	return ctrl.Result{}, nil
 }
 
+// SetupWithManager sets up the controller with the Manager.
 func (r *TailnetReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&tailcarv1alpha1.Tailnet{}).

@@ -30,6 +30,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: Tailnet is the Schema for the tailnets API.
         properties:
           apiVersion:
             description: |-
@@ -49,8 +50,11 @@ spec:
           metadata:
             type: object
           spec:
+            description: TailnetSpec defines the desired state of Tailnet.
             properties:
               oauthSecretRef:
+                description: SecretReference references a secret containing OAuth
+                  credentials.
                 properties:
                   name:
                     type: string
@@ -64,6 +68,7 @@ spec:
                 default: '-'
                 type: string
               tailscale:
+                description: TailscaleConfig contains Tailscale-specific configuration.
                 properties:
                   autoApprove:
                     default: true
@@ -196,6 +201,7 @@ spec:
             - tailscale
             type: object
           status:
+            description: TailnetStatus defines the observed state of Tailnet.
             properties:
               authKeyCreated:
                 format: date-time

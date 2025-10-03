@@ -1,3 +1,4 @@
+// Package webhook contains admission webhooks for Tailcar.
 package webhook
 
 import (
@@ -17,26 +18,30 @@ import (
 )
 
 const (
-	// Annotations
-	AnnotationInject  = "tailcar.rajsingh.info/inject"
+	// AnnotationInject enables sidecar injection when set to "true".
+	AnnotationInject = "tailcar.rajsingh.info/inject"
+	// AnnotationTailnet specifies the Tailnet resource to use.
 	AnnotationTailnet = "tailcar.rajsingh.info/tailnet"
 
-	// Sidecar container name
+	// TailscaleSidecarName is the name of the Tailscale sidecar container.
 	TailscaleSidecarName = "tailscale"
 )
 
 // +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=ignore,groups="",resources=pods,verbs=create;update,versions=v1,name=mpod.tailcar.rajsingh.info,admissionReviewVersions=v1,sideEffects=None
 
+// PodMutator injects Tailscale sidecars into pods.
 type PodMutator struct {
 	Client  client.Client
 	decoder *admission.Decoder
 }
 
+// InjectDecoder injects the decoder into the webhook.
 func (m *PodMutator) InjectDecoder(d *admission.Decoder) error {
 	m.decoder = d
 	return nil
 }
 
+// Handle processes the admission request and mutates pods.
 func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admission.Response {
 	logger := log.FromContext(ctx).WithValues("namespace", req.Namespace, "pod", req.Name)
 
@@ -166,7 +171,7 @@ func buildHostname(pod *corev1.Pod, tailnet *tailcarv1alpha1.Tailnet) string {
 	return pod.Name
 }
 
-func buildEnv(pod *corev1.Pod, tailnet *tailcarv1alpha1.Tailnet, hostname string) []corev1.EnvVar {
+func buildEnv(_ *corev1.Pod, tailnet *tailcarv1alpha1.Tailnet, hostname string) []corev1.EnvVar {
 	env := []corev1.EnvVar{
 		{
 			Name: "TS_AUTHKEY",
@@ -263,7 +268,7 @@ func buildInitContainer(tailnet *tailcarv1alpha1.Tailnet) corev1.Container {
 	}
 }
 
-func buildVolumes(tailnet *tailcarv1alpha1.Tailnet) []corev1.Volume {
+func buildVolumes(_ *tailcarv1alpha1.Tailnet) []corev1.Volume {
 	charDevice := corev1.HostPathCharDev
 	volumes := []corev1.Volume{
 		{

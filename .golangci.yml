@@ -1,0 +1,61 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - gosec
+    - revive
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+linters-settings:
+  errcheck:
+    check-blank: false
+    check-type-assertions: false
+
+  govet:
+    enable-all: true
+    disable:
+      - shadow
+
+  goimports:
+    local-prefixes: github.com/rajsinghtech/tailcar
+
+  gosec:
+    excludes:
+      - G104 # Audit errors not checked - too noisy
+
+  revive:
+    rules:
+      - name: exported
+        disabled: true
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
+
+    - path: zz_generated.*\.go
+      linters:
+        - all
+
+    - path: api/v1alpha1/.*_types\.go
+      linters:
+        - revive
+
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -1,0 +1,78 @@
+name: Reusable Docker Build
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: 'Docker image name'
+        required: true
+        type: string
+      platforms:
+        description: 'Target platforms'
+        required: false
+        type: string
+        default: 'linux/amd64,linux/arm64'
+      push:
+        description: 'Push image to registry'
+        required: false
+        type: boolean
+        default: false
+      go-version:
+        description: 'Go version for build'
+        required: false
+        type: string
+        default: '1.25.1'
+    outputs:
+      digest:
+        description: 'Image digest'
+        value: ${{ jobs.build.outputs.digest }}
+      tags:
+        description: 'Image tags'
+        value: ${{ jobs.build.outputs.tags }}
+      metadata:
+        description: 'Image metadata'
+        value: ${{ jobs.build.outputs.metadata }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      tags: ${{ steps.meta.outputs.tags }}
+      metadata: ${{ steps.meta.outputs.json }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ inputs.image-name }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ inputs.platforms }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            GO_VERSION=${{ inputs.go-version }}

@@ -1,3 +1,4 @@
+// Package controller contains Kubernetes controllers for the Tailcar operator.
 package controller
 
 import (
@@ -8,7 +9,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -22,10 +22,15 @@ import (
 )
 
 const (
-	PodFinalizerName         = "tailcar.rajsingh.info/device-cleanup"
-	AnnotationDeviceID       = "tailcar.rajsingh.info/device-id"
-	AnnotationInjected       = "tailcar.rajsingh.info/injected"
-	AnnotationTailnet        = "tailcar.rajsingh.info/tailnet"
+	// PodFinalizerName is the finalizer added to pods for device cleanup.
+	PodFinalizerName = "tailcar.rajsingh.info/device-cleanup"
+	// AnnotationDeviceID stores the Tailscale device ID.
+	AnnotationDeviceID = "tailcar.rajsingh.info/device-id"
+	// AnnotationInjected marks a pod as having been injected.
+	AnnotationInjected = "tailcar.rajsingh.info/injected"
+	// AnnotationTailnet references the Tailnet resource name.
+	AnnotationTailnet = "tailcar.rajsingh.info/tailnet"
+	// DeviceCleanupRequeueTime is the time to wait before retrying device cleanup.
 	DeviceCleanupRequeueTime = 30 * time.Second
 )
 
@@ -34,10 +39,12 @@ const (
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=tailcar.rajsingh.info,resources=tailnets,verbs=get;list;watch
 
+// PodReconciler reconciles Pod objects with Tailscale device cleanup.
 type PodReconciler struct {
 	client.Client
 }
 
+// Reconcile handles pod reconciliation for Tailscale device cleanup.
 func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -144,7 +151,7 @@ func (r *PodReconciler) cleanupDevice(ctx context.Context, namespace, tailnetNam
 
 	if err := tsClient.Devices().Delete(ctx, deviceID); err != nil {
 		// Check if device is already gone (404 error or not found)
-		if apierrors.IsNotFound(err) {
+		if errors.IsNotFound(err) {
 			logger.Info("Device already deleted", "deviceID", deviceID)
 			return nil
 		}
@@ -313,6 +320,7 @@ func buildExpectedHostname(pod *corev1.Pod, tailnet *tailcarv1alpha1.Tailnet) st
 	return pod.Name
 }
 
+// SetupWithManager sets up the controller with the Manager.
 func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Pod{}).
@@ -332,10 +340,10 @@ func (h *tailnetEventHandler) Update(ctx context.Context, e event.UpdateEvent, q
 	h.enqueuePods(ctx, e.ObjectNew, q)
 }
 
-func (h *tailnetEventHandler) Delete(ctx context.Context, e event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (h *tailnetEventHandler) Delete(_ context.Context, _ event.DeleteEvent, _ workqueue.RateLimitingInterface) {
 }
 
-func (h *tailnetEventHandler) Generic(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (h *tailnetEventHandler) Generic(_ context.Context, _ event.GenericEvent, _ workqueue.RateLimitingInterface) {
 }
 
 func (h *tailnetEventHandler) enqueuePods(ctx context.Context, obj client.Object, q workqueue.RateLimitingInterface) {

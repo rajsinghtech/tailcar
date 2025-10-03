@@ -1,5 +1,5 @@
 apiVersion: v2
-name: tailcar
+name: tailcar-helm
 description: A Kubernetes operator that provides seamless Tailscale integration through sidecar injection
 type: application
 version: 0.1.0

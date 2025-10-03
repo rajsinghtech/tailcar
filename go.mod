@@ -1,6 +1,6 @@
 module github.com/rajsinghtech/tailcar
 
-go 1.24.0
+go 1.25.1
 
 require (
 	k8s.io/api v0.29.0

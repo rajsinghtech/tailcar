@@ -1,3 +1,4 @@
+// Package main is the entry point for the Tailcar operator manager.
 package main
 
 import (
@@ -89,7 +90,10 @@ func main() {
 		Client: mgr.GetClient(),
 	}
 	decoder := admission.NewDecoder(mgr.GetScheme())
-	podMutator.InjectDecoder(decoder)
+	if err := podMutator.InjectDecoder(decoder); err != nil {
+		setupLog.Error(err, "unable to inject decoder")
+		os.Exit(1)
+	}
 	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{
 		Handler: podMutator,
 	})
