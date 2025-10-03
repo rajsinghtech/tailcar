@@ -80,6 +80,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -92,8 +95,6 @@ jobs:
           tags: tailcar:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            GO_VERSION=${{ env.GO_VERSION }}
 
   helm-test:
     name: Helm Test

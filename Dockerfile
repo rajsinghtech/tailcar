@@ -1,23 +1,32 @@
 # Build stage
-FROM golang:1.24rc1-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /workspace
 
-# Copy go mod files
-COPY go.mod go.mod
-COPY go.sum go.sum
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates
 
-# Cache deps before building and copying source
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+
+# Download dependencies (cached layer)
 ENV GOTOOLCHAIN=auto
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 # Copy source code
 COPY cmd/ cmd/
 COPY api/ api/
 COPY internal/ internal/
 
-# Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -o manager cmd/manager/main.go
+# Build with cache mounts and target platform
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -ldflags="-w -s" -trimpath -o manager cmd/manager/main.go
 
 # Runtime stage
 FROM gcr.io/distroless/static:nonroot

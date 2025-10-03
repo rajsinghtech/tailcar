@@ -1,0 +1,41 @@
+# Git files
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+docs/
+
+# CI/CD
+.github/
+.golangci.yml
+
+# Build artifacts
+bin/
+dist/
+*.log
+cover.out
+coverage.html
+
+# Helm charts (not needed in container)
+helm/
+
+# Config samples
+config/samples/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Mac
+.DS_Store
+
+# Tests
+*_test.go
+
+# Temporary files
+tmp/
+temp/

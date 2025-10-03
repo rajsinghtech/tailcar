@@ -38,19 +38,50 @@ test: manifests generate fmt vet ## Run tests
 
 .PHONY: build
 build: generate fmt vet ## Build manager binary
-	go build -o bin/manager cmd/manager/main.go
+	CGO_ENABLED=0 go build -ldflags="-w -s" -trimpath -o bin/manager cmd/manager/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run from your host
 	go run ./cmd/manager/main.go
 
+# Docker image configuration
+IMAGE_REGISTRY ?= ghcr.io
+IMAGE_ORG ?= rajsinghtech
+IMAGE_NAME ?= tailcar
+IMAGE_TAG ?= latest
+IMAGE ?= $(IMAGE_REGISTRY)/$(IMAGE_ORG)/$(IMAGE_NAME):$(IMAGE_TAG)
+
+# Build platforms
+PLATFORMS ?= linux/amd64,linux/arm64
+
 .PHONY: docker-build
-docker-build: ## Build docker image
-	docker build -t tailcar:latest .
+docker-build: ## Build docker image for current platform
+	docker build -t $(IMAGE) .
+
+.PHONY: docker-build-multi
+docker-build-multi: ## Build docker image for multiple platforms (requires buildx)
+	docker buildx build \
+		--platform $(PLATFORMS) \
+		--tag $(IMAGE) \
+		--load \
+		.
 
 .PHONY: docker-push
 docker-push: ## Push docker image
-	docker push tailcar:latest
+	docker push $(IMAGE)
+
+.PHONY: docker-build-push
+docker-build-push: ## Build and push multi-platform docker image
+	docker buildx build \
+		--platform $(PLATFORMS) \
+		--tag $(IMAGE) \
+		--push \
+		.
+
+.PHONY: docker-buildx-setup
+docker-buildx-setup: ## Setup docker buildx for multi-platform builds
+	docker buildx create --name tailcar-builder --use --bootstrap || docker buildx use tailcar-builder
+	docker buildx inspect --bootstrap
 
 ##@ Deployment
 
