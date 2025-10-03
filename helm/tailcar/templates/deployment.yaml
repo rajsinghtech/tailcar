@@ -52,8 +52,17 @@ spec:
           echo "Installing dependencies..."
           apk add --no-cache openssl curl ca-certificates
 
-          # Install kubectl
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/arm64/kubectl"
+          # Install kubectl - detect architecture
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) KUBECTL_ARCH="amd64" ;;
+            aarch64) KUBECTL_ARCH="arm64" ;;
+            armv7l) KUBECTL_ARCH="arm" ;;
+            *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+          esac
+
+          echo "Downloading kubectl for $KUBECTL_ARCH..."
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/${KUBECTL_ARCH}/kubectl"
           chmod +x kubectl
           mv kubectl /usr/local/bin/
 
