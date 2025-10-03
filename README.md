@@ -47,7 +47,6 @@ apiVersion: tailcar.rajsingh.info/v1alpha1
 kind: Tailnet
 metadata:
   name: my-tailnet
-  namespace: default
 spec:
   tailnetName: "-"  # Use "-" for default tailnet
 

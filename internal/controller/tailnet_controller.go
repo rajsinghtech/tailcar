@@ -138,7 +138,7 @@ func (r *TailnetReconciler) handleDeletion(ctx context.Context, tailnet *tailcar
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      secretName,
-				Namespace: tailnet.Namespace,
+				Namespace: tailnet.Spec.OAuthSecretRef.Namespace,
 			},
 		}
 		if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
@@ -204,7 +204,7 @@ func (r *TailnetReconciler) ensureAuthKey(ctx context.Context, tailnet *tailcarv
 		if err == nil && !key.Invalid && key.Revoked.IsZero() && key.Expires.After(rotationThreshold) {
 			secretName := fmt.Sprintf("%s-authkey", tailnet.Name)
 			secret := &corev1.Secret{}
-			secretKey := client.ObjectKey{Name: secretName, Namespace: tailnet.Namespace}
+			secretKey := client.ObjectKey{Name: secretName, Namespace: tailnet.Spec.OAuthSecretRef.Namespace}
 			if err := r.Get(ctx, secretKey, secret); err != nil {
 				logger.Info("Auth key secret missing, recreating", "keyID", tailnet.Status.AuthKeyID)
 				// Secret is missing but key is valid - just recreate the secret
@@ -238,7 +238,7 @@ func (r *TailnetReconciler) ensureAuthKey(ctx context.Context, tailnet *tailcarv
 	createReq := tailscale.CreateKeyRequest{
 		Capabilities:  tailscale.KeyCapabilities{},
 		ExpirySeconds: 90 * 24 * 60 * 60, // 90 days
-		Description:   fmt.Sprintf("Tailcar operator %s-%s", tailnet.Namespace, tailnet.Name),
+		Description:   fmt.Sprintf("Tailcar operator %s", tailnet.Name),
 	}
 
 	createReq.Capabilities.Devices.Create.Reusable = true
@@ -275,7 +275,7 @@ func (r *TailnetReconciler) ensureAuthKeySecret(ctx context.Context, tailnet *ta
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
-			Namespace: tailnet.Namespace,
+			Namespace: tailnet.Spec.OAuthSecretRef.Namespace,
 		},
 	}
 
@@ -286,9 +286,11 @@ func (r *TailnetReconciler) ensureAuthKeySecret(ctx context.Context, tailnet *ta
 		}
 		secret.Data["TS_AUTHKEY"] = []byte(authKey)
 
-		if err := controllerutil.SetControllerReference(tailnet, secret, r.Scheme); err != nil {
-			return err
+		// Add labels to track ownership (can't use SetControllerReference with cluster-scoped resource)
+		if secret.Labels == nil {
+			secret.Labels = make(map[string]string)
 		}
+		secret.Labels["tailcar.rajsingh.info/tailnet"] = tailnet.Name
 
 		return nil
 	})
@@ -303,7 +305,7 @@ func (r *TailnetReconciler) ensureAuthKeySecret(ctx context.Context, tailnet *ta
 
 func (r *TailnetReconciler) updateInjectedPodsCount(ctx context.Context, tailnet *tailcarv1alpha1.Tailnet) error {
 	podList := &corev1.PodList{}
-	if err := r.List(ctx, podList, client.InNamespace(tailnet.Namespace)); err != nil {
+	if err := r.List(ctx, podList); err != nil {
 		return fmt.Errorf("failed to list pods: %w", err)
 	}
 

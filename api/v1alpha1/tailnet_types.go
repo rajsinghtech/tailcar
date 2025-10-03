@@ -78,7 +78,7 @@ type TailnetStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="Tailnet",type=string,JSONPath=`.spec.tailnetName`
 // +kubebuilder:printcolumn:name="Injected",type=integer,JSONPath=`.status.injectedPods`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`

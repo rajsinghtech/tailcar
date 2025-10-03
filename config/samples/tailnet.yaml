@@ -2,7 +2,6 @@ apiVersion: tailcar.rajsingh.info/v1alpha1
 kind: Tailnet
 metadata:
   name: test-tailnet
-  namespace: default
 spec:
   tailnetName: "-"
   oauthSecretRef:

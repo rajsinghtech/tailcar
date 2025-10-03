@@ -84,8 +84,7 @@ func TestPodMutator_Handle_WithAnnotation(t *testing.T) {
 
 	tailnet := &tailcarv1alpha1.Tailnet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-tailnet",
-			Namespace: "default",
+			Name: "test-tailnet",
 		},
 		Spec: tailcarv1alpha1.TailnetSpec{
 			TailnetName: "-",
@@ -250,8 +249,7 @@ func TestPodMutator_Handle_ConfigurableEnv(t *testing.T) {
 
 	tailnet := &tailcarv1alpha1.Tailnet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-tailnet",
-			Namespace: "default",
+			Name: "test-tailnet",
 		},
 		Spec: tailcarv1alpha1.TailnetSpec{
 			TailnetName: "-",
@@ -359,8 +357,7 @@ func TestPodMutator_Handle_NamespaceInjection(t *testing.T) {
 
 	tailnet := &tailcarv1alpha1.Tailnet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-tailnet",
-			Namespace: "default",
+			Name: "test-tailnet",
 		},
 		Spec: tailcarv1alpha1.TailnetSpec{
 			TailnetName: "-",
@@ -453,8 +450,7 @@ func TestPodMutator_Handle_UpdateOperation(t *testing.T) {
 
 	tailnet := &tailcarv1alpha1.Tailnet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-tailnet",
-			Namespace: "default",
+			Name: "test-tailnet",
 		},
 		Spec: tailcarv1alpha1.TailnetSpec{
 			TailnetName: "-",

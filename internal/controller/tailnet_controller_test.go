@@ -22,8 +22,7 @@ func TestTailnetReconciler_Reconcile(t *testing.T) {
 
 	tailnet := &tailcarv1alpha1.Tailnet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-tailnet",
-			Namespace: "default",
+			Name: "test-tailnet",
 		},
 		Spec: tailcarv1alpha1.TailnetSpec{
 			TailnetName: "-",
@@ -116,8 +115,7 @@ func TestUpdateInjectedPodsCount(t *testing.T) {
 
 	tailnet := &tailcarv1alpha1.Tailnet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-tailnet",
-			Namespace: "default",
+			Name: "test-tailnet",
 		},
 		Spec: tailcarv1alpha1.TailnetSpec{
 			TailnetName: "-",

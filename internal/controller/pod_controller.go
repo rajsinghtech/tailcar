@@ -371,7 +371,7 @@ func (h *tailnetEventHandler) enqueuePods(ctx context.Context, obj client.Object
 	}
 
 	pods := &corev1.PodList{}
-	if err := h.List(ctx, pods, client.InNamespace(tailnet.Namespace)); err != nil {
+	if err := h.List(ctx, pods); err != nil {
 		return
 	}
 

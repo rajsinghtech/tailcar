@@ -80,10 +80,7 @@ func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 	}
 
 	tailnet := &tailcarv1alpha1.Tailnet{}
-	if err := m.Client.Get(ctx, types.NamespacedName{
-		Name:      tailnetName,
-		Namespace: pod.Namespace,
-	}, tailnet); err != nil {
+	if err := m.Client.Get(ctx, types.NamespacedName{Name: tailnetName}, tailnet); err != nil {
 		logger.Error(err, "Failed to get Tailnet resource", "tailnet", tailnetName)
 		return admission.Denied(fmt.Sprintf("tailnet %s not found: %v", tailnetName, err))
 	}
@@ -98,7 +95,7 @@ func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 	authKeySecret := &corev1.Secret{}
 	if err := m.Client.Get(ctx, types.NamespacedName{
 		Name:      authKeySecretName,
-		Namespace: pod.Namespace,
+		Namespace: tailnet.Spec.OAuthSecretRef.Namespace,
 	}, authKeySecret); err != nil {
 		logger.Error(err, "Auth key secret not found", "secret", authKeySecretName)
 		return admission.Denied(fmt.Sprintf("auth key secret %s not found: %v", authKeySecretName, err))
