@@ -61,8 +61,6 @@ affinity: {}
 webhook:
   enabled: true
   port: 9443
-  certManager:
-    enabled: true
   service:
     type: ClusterIP
     port: 443

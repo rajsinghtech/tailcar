@@ -84,4 +84,14 @@ rules:
       - patch
       - update
       - watch
+  # Webhook configuration permissions for cert injection
+  - apiGroups:
+      - admissionregistration.k8s.io
+    resources:
+      - mutatingwebhookconfigurations
+    verbs:
+      - get
+      - list
+      - patch
+      - update
 {{- end }}

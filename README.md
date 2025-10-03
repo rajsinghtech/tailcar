@@ -20,22 +20,7 @@
 - Kubernetes cluster (v1.20+)
 - `kubectl` configured
 - Helm 3.x (recommended)
-- [cert-manager](https://cert-manager.io/) (v1.0+) - For webhook certificate management
 - Tailscale account with OAuth client
-
-### Install cert-manager
-
-Tailcar uses cert-manager to manage webhook certificates. Install it first if not already present:
-
-```bash
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
-```
-
-Wait for cert-manager to be ready:
-
-```bash
-kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=300s
-```
 
 ### Install with Helm (Recommended)
 

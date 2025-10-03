@@ -5,10 +5,7 @@ metadata:
   name: {{ include "tailcar.fullname" . }}-webhook
   labels:
     {{- include "tailcar.labels" . | nindent 4 }}
-  {{- if .Values.webhook.certManager.enabled }}
-  annotations:
-    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "tailcar.fullname" . }}-serving-cert
-  {{- end }}
+    tailcar.rajsingh.info/inject-ca: "true"
 webhooks:
 - name: tailcar.rajsingh.info
   clientConfig:
