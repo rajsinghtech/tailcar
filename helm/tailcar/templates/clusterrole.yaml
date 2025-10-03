@@ -1,0 +1,87 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "tailcar.fullname" . }}-manager-role
+  labels:
+    {{- include "tailcar.labels" . | nindent 4 }}
+rules:
+  # Tailnet CRD permissions
+  - apiGroups:
+      - tailcar.rajsingh.info
+    resources:
+      - tailnets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - tailcar.rajsingh.info
+    resources:
+      - tailnets/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - tailcar.rajsingh.info
+    resources:
+      - tailnets/finalizers
+    verbs:
+      - update
+  # Secret permissions for OAuth and auth keys
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  # Pod permissions for webhook and controller
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+      - update
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - pods/finalizers
+    verbs:
+      - update
+  # Event permissions
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  # Leader election
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+{{- end }}

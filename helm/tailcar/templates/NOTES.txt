@@ -1,0 +1,79 @@
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named {{ .Release.Name }}.
+
+The Tailcar operator has been deployed to namespace {{ .Release.Namespace }}.
+
+To get started:
+
+1. Create an OAuth secret with your Tailscale credentials:
+
+   kubectl create secret generic my-tailnet-oauth \
+     --namespace {{ .Release.Namespace }} \
+     --from-literal=client-id='<your-client-id>' \
+     --from-literal=client-secret='<your-client-secret>'
+
+2. Create a Tailnet resource:
+
+   cat <<EOF | kubectl apply -f -
+   apiVersion: tailcar.rajsingh.info/v1alpha1
+   kind: Tailnet
+   metadata:
+     name: my-tailnet
+     namespace: {{ .Release.Namespace }}
+   spec:
+     tailnetName: "-"
+     oauthSecretRef:
+       name: my-tailnet-oauth
+       namespace: {{ .Release.Namespace }}
+     tailscale:
+       ephemeral: true
+       autoApprove: true
+       hostnamePrefix: "k8s"
+       userspace: false
+       tags:
+         - "tag:k8s"
+   EOF
+
+3. Annotate your pods to enable Tailscale injection:
+
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     name: my-app
+     annotations:
+       tailcar.rajsingh.info/inject: "true"
+       tailcar.rajsingh.info/tailnet: "my-tailnet"
+   spec:
+     containers:
+     - name: app
+       image: nginx
+
+{{- if .Values.webhook.enabled }}
+
+The webhook is enabled and will inject Tailscale sidecars into annotated pods.
+
+{{- if .Values.webhook.certManager.enabled }}
+TLS certificates are managed by cert-manager.
+Make sure cert-manager is installed: https://cert-manager.io/docs/installation/
+{{- else }}
+WARNING: cert-manager is disabled. Webhook TLS certificates must be provided manually.
+{{- end }}
+
+{{- else }}
+
+WARNING: The webhook is disabled. Pods will not be injected with Tailscale sidecars.
+
+{{- end }}
+
+{{- if .Values.metrics.enabled }}
+
+Metrics are available at:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "tailcar.fullname" . }}-metrics-service {{ .Values.metrics.service.port }}:{{ .Values.metrics.service.port }}
+
+Then visit http://localhost:{{ .Values.metrics.service.port }}/metrics
+
+{{- end }}
+
+For more information, visit:
+  https://github.com/rajsinghtech/tailcar

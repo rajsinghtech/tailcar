@@ -1,0 +1,154 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tailcar-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tailcar-controller-manager
+  namespace: tailcar-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tailcar-controller-manager
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/status"]
+  verbs: ["get", "list", "watch", "patch", "update"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+- apiGroups: ["tailcar.rajsingh.info"]
+  resources: ["tailnets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["tailcar.rajsingh.info"]
+  resources: ["tailnets/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: ["tailcar.rajsingh.info"]
+  resources: ["tailnets/finalizers"]
+  verbs: ["update"]
+- apiGroups: ["admissionregistration.k8s.io"]
+  resources: ["mutatingwebhookconfigurations"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tailcar-controller-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tailcar-controller-manager
+subjects:
+- kind: ServiceAccount
+  name: tailcar-controller-manager
+  namespace: tailcar-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tailcar-webhook
+  namespace: tailcar-system
+spec:
+  ports:
+  - name: webhook
+    port: 443
+    targetPort: 9443
+  selector:
+    app: tailcar
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tailcar-controller-manager
+  namespace: tailcar-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tailcar
+  template:
+    metadata:
+      labels:
+        app: tailcar
+    spec:
+      serviceAccountName: tailcar-controller-manager
+      initContainers:
+      - name: cert-init
+        image: tailcar:test
+        imagePullPolicy: Never
+        command: ["/cert-init"]
+        args:
+          - --service=tailcar-webhook
+          - --namespace=tailcar-system
+          - --secret=tailcar-webhook-tls
+          - --webhook=tailcar-webhook
+      containers:
+      - name: manager
+        image: tailcar:test
+        imagePullPolicy: Never
+        volumeMounts:
+        - name: webhook-tls
+          mountPath: /tmp/k8s-webhook-server/serving-certs
+          readOnly: true
+        ports:
+        - containerPort: 9443
+          name: webhook-server
+          protocol: TCP
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        - containerPort: 8081
+          name: healthz
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: healthz
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: healthz
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+      volumes:
+      - name: webhook-tls
+        secret:
+          secretName: tailcar-webhook-tls
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: tailcar-webhook
+webhooks:
+- name: pod.tailcar.rajsingh.info
+  clientConfig:
+    service:
+      name: tailcar-webhook
+      namespace: tailcar-system
+      path: /mutate-v1-pod
+  failurePolicy: Fail
+  admissionReviewVersions: ["v1", "v1beta1"]
+  sideEffects: None
+  rules:
+  - apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods"]
+    operations: ["CREATE"]
+  namespaceSelector:
+    matchLabels:
+      tailcar.rajsingh.info/injection: enabled

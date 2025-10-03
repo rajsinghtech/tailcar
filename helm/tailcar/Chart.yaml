@@ -1,0 +1,19 @@
+apiVersion: v2
+name: tailcar
+description: A Kubernetes operator that provides seamless Tailscale integration through sidecar injection
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - tailscale
+  - kubernetes
+  - operator
+  - sidecar
+  - networking
+home: https://github.com/rajsinghtech/tailcar
+sources:
+  - https://github.com/rajsinghtech/tailcar
+maintainers:
+  - name: Raj Singh
+    email: rajsinghcpre@gmail.com
+icon: https://tailscale.com/files/tailscale-icon.png

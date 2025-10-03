@@ -1,0 +1,20 @@
+{{- if .Values.metrics.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tailcar.fullname" . }}-metrics-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tailcar.labels" . | nindent 4 }}
+    control-plane: controller-manager
+spec:
+  type: {{ .Values.metrics.service.type }}
+  ports:
+  - name: metrics
+    port: {{ .Values.metrics.service.port }}
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    {{- include "tailcar.selectorLabels" . | nindent 4 }}
+    control-plane: controller-manager
+{{- end }}

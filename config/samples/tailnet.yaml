@@ -1,0 +1,17 @@
+apiVersion: tailcar.rajsingh.info/v1alpha1
+kind: Tailnet
+metadata:
+  name: test-tailnet
+  namespace: default
+spec:
+  tailnetName: "-"
+  oauthSecretRef:
+    name: test-tailnet-oauth
+    namespace: default
+  tailscale:
+    tags:
+      - "tag:sidecar"
+    env:
+      - name: TS_EXTRA_ARGS
+        value: "--accept-routes"
+    image: "ghcr.io/tailscale/tailscale:latest"

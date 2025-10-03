@@ -1,0 +1,133 @@
+# Default values for tailcar
+# This is a YAML-formatted file.
+
+# Operator image configuration
+image:
+  repository: ghcr.io/rajsinghtech/tailcar
+  pullPolicy: IfNotPresent
+  tag: ""  # Overrides the image tag whose default is the chart appVersion
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Operator replicas (set to 1 for leader election)
+replicaCount: 1
+
+# Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity rules
+affinity: {}
+
+# Webhook configuration
+webhook:
+  enabled: true
+  port: 9443
+  certManager:
+    enabled: true
+  service:
+    type: ClusterIP
+    port: 443
+
+# Metrics service configuration
+metrics:
+  enabled: true
+  port: 8080
+  service:
+    type: ClusterIP
+    port: 8080
+
+# Health probe configuration
+health:
+  port: 8081
+
+# RBAC configuration
+rbac:
+  create: true
+
+# Leader election
+leaderElection:
+  enabled: true
+  namespace: ""  # Defaults to release namespace
+
+# Logging configuration
+log:
+  level: info
+  encoder: json
+  stacktraceLevel: error
+
+# Controller configuration
+controller:
+  # Concurrent reconciles
+  maxConcurrentReconciles: 1
+  # Sync period for controllers
+  syncPeriod: 10h
+
+# Namespace where operator is deployed
+# Leave empty to watch all namespaces
+watchNamespace: ""
+
+# Additional environment variables
+env: []
+  # - name: EXAMPLE
+  #   value: "value"
+
+# Additional volumes
+extraVolumes: []
+  # - name: extra-volume
+  #   emptyDir: {}
+
+# Additional volume mounts
+extraVolumeMounts: []
+  # - name: extra-volume
+  #   mountPath: /extra
+
+# Priority class name
+priorityClassName: ""
+
+# DNS policy
+dnsPolicy: ClusterFirst
+
+# Restart policy
+restartPolicy: Always
+
+# Termination grace period
+terminationGracePeriodSeconds: 10
