@@ -63,6 +63,15 @@ rules:
       - pods/finalizers
     verbs:
       - update
+  # Namespace permissions for webhook
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+    verbs:
+      - get
+      - list
+      - watch
   # Event permissions
   - apiGroups:
       - ""

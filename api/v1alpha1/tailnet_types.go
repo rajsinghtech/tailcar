@@ -33,9 +33,17 @@ type TailscaleConfig struct {
 	// +optional
 	AutoApprove bool `json:"autoApprove,omitempty"`
 
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:default=true
 	// +optional
-	HostnamePrefix string `json:"hostnamePrefix,omitempty"`
+	AcceptDNS *bool `json:"acceptDNS,omitempty"`
+
+	// +kubebuilder:default=false
+	// +optional
+	Userspace *bool `json:"userspace,omitempty"`
+
+	// +kubebuilder:default="/var/lib/tailscale"
+	// +optional
+	StateDir string `json:"stateDir,omitempty"`
 
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`

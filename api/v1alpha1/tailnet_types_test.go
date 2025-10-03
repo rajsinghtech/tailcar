@@ -15,10 +15,9 @@ func TestTailnetSpec(t *testing.T) {
 			Namespace: "default",
 		},
 		Tailscale: TailscaleConfig{
-			AutoApprove:    true,
-			HostnamePrefix: "test",
-			Tags:           []string{"tag:test"},
-			Image:          "ghcr.io/tailscale/tailscale:latest",
+			AutoApprove: true,
+			Tags:        []string{"tag:test"},
+			Image:       "ghcr.io/tailscale/tailscale:latest",
 		},
 	}
 
@@ -67,10 +66,9 @@ func TestTailnetStatus(t *testing.T) {
 
 func TestTailscaleConfig(t *testing.T) {
 	config := TailscaleConfig{
-		AutoApprove:    true,
-		HostnamePrefix: "k8s",
-		Tags:           []string{"tag:k8s", "tag:prod"},
-		Image:          "ghcr.io/tailscale/tailscale:v1.50.0",
+		AutoApprove: true,
+		Tags:        []string{"tag:k8s", "tag:prod"},
+		Image:       "ghcr.io/tailscale/tailscale:v1.50.0",
 		Env: []corev1.EnvVar{
 			{
 				Name:  "TS_EXTRA_ARGS",
@@ -81,9 +79,6 @@ func TestTailscaleConfig(t *testing.T) {
 
 	if !config.AutoApprove {
 		t.Error("expected AutoApprove to be true")
-	}
-	if config.HostnamePrefix != "k8s" {
-		t.Errorf("expected HostnamePrefix 'k8s', got '%s'", config.HostnamePrefix)
 	}
 	if len(config.Tags) != 2 {
 		t.Errorf("expected 2 tags, got %d", len(config.Tags))

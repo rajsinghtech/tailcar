@@ -23,11 +23,17 @@ const (
 	// AnnotationTailnet specifies the Tailnet resource to use.
 	AnnotationTailnet = "tailcar.rajsingh.info/tailnet"
 
+	// NamespaceLabelInject enables namespace-level injection when set to "enabled".
+	NamespaceLabelInject = "tailcar.rajsingh.info/injection"
+	// NamespaceLabelTailnet specifies the default Tailnet for the namespace.
+	NamespaceLabelTailnet = "tailcar.rajsingh.info/default-tailnet"
+
 	// TailscaleSidecarName is the name of the Tailscale sidecar container.
 	TailscaleSidecarName = "tailscale"
 )
 
 // +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=ignore,groups="",resources=pods,verbs=create;update,versions=v1,name=mpod.tailcar.rajsingh.info,admissionReviewVersions=v1,sideEffects=None
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 
 // PodMutator injects Tailscale sidecars into pods.
 type PodMutator struct {
@@ -51,7 +57,13 @@ func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
-	if !shouldInject(pod) {
+	namespace := &corev1.Namespace{}
+	if err := m.Client.Get(ctx, types.NamespacedName{Name: req.Namespace}, namespace); err != nil {
+		logger.Error(err, "Failed to get namespace")
+		return admission.Errored(http.StatusInternalServerError, err)
+	}
+
+	if !shouldInject(pod, namespace) {
 		logger.V(1).Info("Skipping injection - not requested")
 		return admission.Allowed("injection not requested")
 	}
@@ -61,10 +73,10 @@ func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 		return admission.Allowed("already injected")
 	}
 
-	tailnetName := pod.Annotations[AnnotationTailnet]
+	tailnetName := getTailnetName(pod, namespace)
 	if tailnetName == "" {
-		logger.Info("No tailnet specified in annotation")
-		return admission.Denied("tailnet annotation required")
+		logger.Info("No tailnet specified")
+		return admission.Denied("tailnet not specified in pod annotation or namespace label")
 	}
 
 	tailnet := &tailcarv1alpha1.Tailnet{}
@@ -108,21 +120,55 @@ func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
-	logger.Info("Injecting Tailscale sidecar", "tailnet", tailnetName)
+	source := getInjectionSource(pod, namespace)
+	logger.Info("Injecting Tailscale sidecar", "tailnet", tailnetName, "source", source)
 	return admission.PatchResponseFromRaw(marshaledPod, marshaledMutated)
 }
 
-func shouldInject(pod *corev1.Pod) bool {
-	if pod.Annotations == nil {
-		return false
+func shouldInject(pod *corev1.Pod, namespace *corev1.Namespace) bool {
+	if pod.Annotations != nil {
+		if inject, ok := pod.Annotations[AnnotationInject]; ok {
+			return inject == "true"
+		}
 	}
 
-	inject, ok := pod.Annotations[AnnotationInject]
-	if !ok {
-		return false
+	if namespace.Labels != nil {
+		if inject, ok := namespace.Labels[NamespaceLabelInject]; ok {
+			return inject == "enabled"
+		}
 	}
 
-	return inject == "true"
+	return false
+}
+
+func getTailnetName(pod *corev1.Pod, namespace *corev1.Namespace) string {
+	if pod.Annotations != nil {
+		if tailnet, ok := pod.Annotations[AnnotationTailnet]; ok && tailnet != "" {
+			return tailnet
+		}
+	}
+
+	if namespace.Labels != nil {
+		if tailnet, ok := namespace.Labels[NamespaceLabelTailnet]; ok && tailnet != "" {
+			return tailnet
+		}
+	}
+
+	return ""
+}
+
+func getInjectionSource(pod *corev1.Pod, namespace *corev1.Namespace) string {
+	if pod.Annotations != nil {
+		if _, ok := pod.Annotations[AnnotationInject]; ok {
+			return "pod-annotation"
+		}
+	}
+	if namespace.Labels != nil {
+		if _, ok := namespace.Labels[NamespaceLabelInject]; ok {
+			return "namespace-label"
+		}
+	}
+	return "unknown"
 }
 
 func isInjected(pod *corev1.Pod) bool {
@@ -144,9 +190,12 @@ func isTailnetReady(tailnet *tailcarv1alpha1.Tailnet) bool {
 }
 
 func (m *PodMutator) injectSidecar(pod *corev1.Pod, tailnet *tailcarv1alpha1.Tailnet) error {
-	hostname := buildHostname(pod, tailnet)
-	env := buildEnv(pod, tailnet, hostname)
-	sidecar := buildSidecarContainer(tailnet, env)
+	env := buildEnv(tailnet)
+	stateDir := "/var/lib/tailscale"
+	if tailnet.Spec.Tailscale.StateDir != "" {
+		stateDir = tailnet.Spec.Tailscale.StateDir
+	}
+	sidecar := buildSidecarContainer(tailnet, env, stateDir)
 	volumes := buildVolumes(tailnet)
 	initContainer := buildInitContainer(tailnet)
 	pod.Spec.InitContainers = append(pod.Spec.InitContainers, initContainer)
@@ -157,22 +206,44 @@ func (m *PodMutator) injectSidecar(pod *corev1.Pod, tailnet *tailcarv1alpha1.Tai
 		pod.Annotations = make(map[string]string)
 	}
 	pod.Annotations["tailcar.rajsingh.info/injected"] = "true"
+	pod.Annotations["tailcar.rajsingh.info/tailnet"] = tailnet.Name
 
 	return nil
 }
 
-func buildHostname(pod *corev1.Pod, tailnet *tailcarv1alpha1.Tailnet) string {
-	prefix := tailnet.Spec.Tailscale.HostnamePrefix
-
-	if prefix != "" {
-		return fmt.Sprintf("%s-%s", prefix, pod.Name)
+func buildEnv(tailnet *tailcarv1alpha1.Tailnet) []corev1.EnvVar {
+	acceptDNS := "true"
+	if tailnet.Spec.Tailscale.AcceptDNS != nil && !*tailnet.Spec.Tailscale.AcceptDNS {
+		acceptDNS = "false"
 	}
 
-	return pod.Name
-}
+	userspace := "false"
+	if tailnet.Spec.Tailscale.Userspace != nil && *tailnet.Spec.Tailscale.Userspace {
+		userspace = "true"
+	}
 
-func buildEnv(_ *corev1.Pod, tailnet *tailcarv1alpha1.Tailnet, hostname string) []corev1.EnvVar {
+	stateDir := "/var/lib/tailscale"
+	if tailnet.Spec.Tailscale.StateDir != "" {
+		stateDir = tailnet.Spec.Tailscale.StateDir
+	}
+
 	env := []corev1.EnvVar{
+		{
+			Name: "POD_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.name",
+				},
+			},
+		},
+		{
+			Name: "POD_UID",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.uid",
+				},
+			},
+		},
 		{
 			Name: "TS_AUTHKEY",
 			ValueFrom: &corev1.EnvVarSource{
@@ -186,19 +257,15 @@ func buildEnv(_ *corev1.Pod, tailnet *tailcarv1alpha1.Tailnet, hostname string) 
 		},
 		{
 			Name:  "TS_HOSTNAME",
-			Value: hostname,
+			Value: "$(POD_NAME)",
 		},
 		{
 			Name:  "TS_STATE_DIR",
-			Value: "/var/lib/tailscale",
+			Value: stateDir,
 		},
 		{
 			Name:  "TS_ACCEPT_DNS",
-			Value: "true",
-		},
-		{
-			Name:  "TS_ACCEPT_ROUTES",
-			Value: "true",
+			Value: acceptDNS,
 		},
 		{
 			Name:  "TS_KUBE_SECRET",
@@ -206,7 +273,7 @@ func buildEnv(_ *corev1.Pod, tailnet *tailcarv1alpha1.Tailnet, hostname string) 
 		},
 		{
 			Name:  "TS_USERSPACE",
-			Value: "false",
+			Value: userspace,
 		},
 		{
 			Name:  "TS_DEBUG_FIREWALL_MODE",
@@ -219,7 +286,7 @@ func buildEnv(_ *corev1.Pod, tailnet *tailcarv1alpha1.Tailnet, hostname string) 
 	return env
 }
 
-func buildSidecarContainer(tailnet *tailcarv1alpha1.Tailnet, env []corev1.EnvVar) corev1.Container {
+func buildSidecarContainer(tailnet *tailcarv1alpha1.Tailnet, env []corev1.EnvVar, stateDir string) corev1.Container {
 	image := tailnet.Spec.Tailscale.Image
 	if image == "" {
 		image = "ghcr.io/tailscale/tailscale:latest"
@@ -233,7 +300,7 @@ func buildSidecarContainer(tailnet *tailcarv1alpha1.Tailnet, env []corev1.EnvVar
 		VolumeMounts: []corev1.VolumeMount{
 			{
 				Name:      "tailscale-state",
-				MountPath: "/var/lib/tailscale",
+				MountPath: stateDir,
 			},
 			{
 				Name:      "dev-net-tun",

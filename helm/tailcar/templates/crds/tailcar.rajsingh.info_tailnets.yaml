@@ -70,6 +70,9 @@ spec:
               tailscale:
                 description: TailscaleConfig contains Tailscale-specific configuration.
                 properties:
+                  acceptDNS:
+                    default: true
+                    type: boolean
                   autoApprove:
                     default: true
                     type: boolean
@@ -184,16 +187,19 @@ spec:
                       - name
                       type: object
                     type: array
-                  hostnamePrefix:
-                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
-                    type: string
                   image:
                     default: ghcr.io/tailscale/tailscale:latest
+                    type: string
+                  stateDir:
+                    default: /var/lib/tailscale
                     type: string
                   tags:
                     items:
                       type: string
                     type: array
+                  userspace:
+                    default: false
+                    type: boolean
                 type: object
             required:
             - oauthSecretRef

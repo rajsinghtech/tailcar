@@ -89,14 +89,10 @@ func (r *TailnetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			ReasonOAuthValidationFailed, err.Error())
 	}
 
-	meta.SetStatusCondition(&tailnet.Status.Conditions, metav1.Condition{
-		Type:               ConditionTypeOAuthValid,
-		Status:             metav1.ConditionTrue,
-		ObservedGeneration: tailnet.Generation,
-		LastTransitionTime: metav1.Now(),
-		Reason:             ReasonOAuthValid,
-		Message:            "OAuth credentials are valid",
-	})
+	if _, err := r.updateStatus(ctx, tailnet, metav1.ConditionTrue, ConditionTypeOAuthValid,
+		ReasonOAuthValid, "OAuth credentials are valid"); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	if err := r.ensureAuthKey(ctx, tailnet, tsClient); err != nil {
 		logger.Error(err, "Failed to ensure auth key")
@@ -104,8 +100,23 @@ func (r *TailnetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			ReasonAuthKeyCreationFailed, err.Error())
 	}
 
-	return r.updateStatus(ctx, tailnet, metav1.ConditionTrue, ConditionTypeReady,
-		ReasonReconcileSuccess, "Tailnet is ready")
+	// Update InjectedPods count by listing pods
+	if err := r.updateInjectedPodsCount(ctx, tailnet); err != nil {
+		logger.Error(err, "Failed to update injected pods count")
+	}
+
+	// Requeue periodically to check authkey expiration
+	// Requeue at 75% of the 90-day expiration (67.5 days) to rotate before expiry
+	requeueAfter := 67*24*time.Hour + 12*time.Hour
+
+	if _, err := r.updateStatus(ctx, tailnet, metav1.ConditionTrue, ConditionTypeReady,
+		ReasonReconcileSuccess, "Tailnet is ready"); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	logger.Info("Reconciliation complete, will requeue for authkey rotation check",
+		"requeueAfter", requeueAfter.String())
+	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
 func (r *TailnetReconciler) handleDeletion(ctx context.Context, tailnet *tailcarv1alpha1.Tailnet) (ctrl.Result, error) {
@@ -146,6 +157,10 @@ func (r *TailnetReconciler) handleDeletion(ctx context.Context, tailnet *tailcar
 }
 
 func (r *TailnetReconciler) getTailscaleClient(ctx context.Context, tailnet *tailcarv1alpha1.Tailnet) (*tailscale.Client, error) {
+	if tailnet.Spec.OAuthSecretRef.Name == "" || tailnet.Spec.OAuthSecretRef.Namespace == "" {
+		return nil, fmt.Errorf("OAuth secret reference is incomplete")
+	}
+
 	secret := &corev1.Secret{}
 	secretKey := client.ObjectKey{
 		Name:      tailnet.Spec.OAuthSecretRef.Name,
@@ -183,12 +198,15 @@ func (r *TailnetReconciler) ensureAuthKey(ctx context.Context, tailnet *tailcarv
 
 	if tailnet.Status.AuthKeyID != "" {
 		key, err := tsClient.Keys().Get(ctx, tailnet.Status.AuthKeyID)
-		if err == nil && !key.Invalid && key.Revoked.IsZero() && key.Expires.After(time.Now()) {
+		// Rotate key if it expires in less than 14 days (or already expired/invalid/revoked)
+		rotationThreshold := time.Now().Add(14 * 24 * time.Hour)
+
+		if err == nil && !key.Invalid && key.Revoked.IsZero() && key.Expires.After(rotationThreshold) {
 			secretName := fmt.Sprintf("%s-authkey", tailnet.Name)
 			secret := &corev1.Secret{}
 			secretKey := client.ObjectKey{Name: secretName, Namespace: tailnet.Namespace}
 			if err := r.Get(ctx, secretKey, secret); err != nil {
-				logger.Info("Auth key secret missing, recreating secret only", "keyID", tailnet.Status.AuthKeyID)
+				logger.Info("Auth key secret missing, recreating", "keyID", tailnet.Status.AuthKeyID)
 				// Secret is missing but key is valid - just recreate the secret
 				// We can't retrieve the key value from Tailscale, so we have to create a new key
 				if err := tsClient.Keys().Delete(ctx, tailnet.Status.AuthKeyID); err != nil {
@@ -196,8 +214,18 @@ func (r *TailnetReconciler) ensureAuthKey(ctx context.Context, tailnet *tailcarv
 				}
 				// Fall through to create new key
 			} else {
-				// Both key and secret exist and are valid
+				// Both key and secret exist and are valid (and not expiring soon)
+				logger.V(1).Info("Auth key is valid", "keyID", tailnet.Status.AuthKeyID,
+					"expires", key.Expires.Format(time.RFC3339))
 				return nil
+			}
+		} else if err == nil {
+			// Key exists but needs rotation
+			logger.Info("Auth key needs rotation", "keyID", tailnet.Status.AuthKeyID,
+				"expires", key.Expires.Format(time.RFC3339),
+				"invalid", key.Invalid, "revoked", !key.Revoked.IsZero())
+			if err := tsClient.Keys().Delete(ctx, tailnet.Status.AuthKeyID); err != nil {
+				logger.Error(err, "Failed to delete expiring auth key")
 			}
 		}
 	}
@@ -270,6 +298,27 @@ func (r *TailnetReconciler) ensureAuthKeySecret(ctx context.Context, tailnet *ta
 	}
 
 	logger.Info("Ensured auth key secret", "secretName", secretName)
+	return nil
+}
+
+func (r *TailnetReconciler) updateInjectedPodsCount(ctx context.Context, tailnet *tailcarv1alpha1.Tailnet) error {
+	podList := &corev1.PodList{}
+	if err := r.List(ctx, podList, client.InNamespace(tailnet.Namespace)); err != nil {
+		return fmt.Errorf("failed to list pods: %w", err)
+	}
+
+	count := int32(0)
+	for _, pod := range podList.Items {
+		if pod.Annotations != nil {
+			if injected, ok := pod.Annotations["tailcar.rajsingh.info/injected"]; ok && injected == "true" {
+				if tailnetName, ok := pod.Annotations["tailcar.rajsingh.info/tailnet"]; ok && tailnetName == tailnet.Name {
+					count++
+				}
+			}
+		}
+	}
+
+	tailnet.Status.InjectedPods = count
 	return nil
 }
 

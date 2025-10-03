@@ -102,9 +102,9 @@ func (r *PodReconciler) handleDeletion(ctx context.Context, pod *corev1.Pod) (ct
 		return ctrl.Result{}, nil
 	}
 
+	tailnetName := pod.Annotations[AnnotationTailnet]
 	deviceID := pod.Annotations[AnnotationDeviceID]
 	if deviceID != "" {
-		tailnetName := pod.Annotations[AnnotationTailnet]
 		if tailnetName == "" {
 			logger.Info("No tailnet annotation found, skipping device cleanup")
 		} else {
@@ -113,6 +113,14 @@ func (r *PodReconciler) handleDeletion(ctx context.Context, pod *corev1.Pod) (ct
 				return ctrl.Result{RequeueAfter: DeviceCleanupRequeueTime}, err
 			}
 			logger.Info("Successfully deleted device from Tailscale", "deviceID", deviceID)
+		}
+	}
+
+	// Decrement InjectedPods counter
+	if tailnetName != "" {
+		if err := r.decrementInjectedPods(ctx, pod.Namespace, tailnetName); err != nil {
+			logger.Error(err, "Failed to decrement InjectedPods counter")
+			// Don't fail the deletion due to counter update failure
 		}
 	}
 
@@ -150,17 +158,17 @@ func (r *PodReconciler) cleanupDevice(ctx context.Context, namespace, tailnetNam
 	}
 
 	if err := tsClient.Devices().Delete(ctx, deviceID); err != nil {
-		// Check if device is already gone (404 error or not found)
-		if errors.IsNotFound(err) {
-			logger.Info("Device already deleted", "deviceID", deviceID)
-			return nil
-		}
-		// Fallback to string matching for non-k8s API errors
 		errMsg := err.Error()
-		if strings.Contains(errMsg, "404") || strings.Contains(errMsg, "not found") {
+		// Check if device is already gone (404 error or not found)
+		if errors.IsNotFound(err) || strings.Contains(errMsg, "404") || strings.Contains(errMsg, "not found") {
 			logger.Info("Device already deleted", "deviceID", deviceID)
 			return nil
 		}
+		// Don't retry on permission errors
+		if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "unauthorized") || strings.Contains(errMsg, "forbidden") {
+			return fmt.Errorf("permission denied deleting device: %w", err)
+		}
+		// All other errors (network timeouts, etc.) should be retried
 		return fmt.Errorf("failed to delete device: %w", err)
 	}
 
@@ -188,24 +196,17 @@ func (r *PodReconciler) discoverDeviceID(ctx context.Context, pod *corev1.Pod) e
 		return fmt.Errorf("failed to create Tailscale client: %w", err)
 	}
 
-	hostname := buildExpectedHostname(pod, tailnet)
+	expectedHostname := buildExpectedHostname(pod)
 
-	// Search for device by hostname - use a reasonable limit to avoid timeouts
-	// Tailscale API doesn't support filtering by hostname, so we list with a limit
-	const maxDevicesToCheck = 500
+	// Search for device by hostname
+	// Note: We iterate through all devices as Tailscale API doesn't support hostname filtering
 	devices, err := tsClient.Devices().List(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list devices: %w", err)
 	}
 
-	checkedCount := 0
 	for _, device := range devices {
-		if checkedCount >= maxDevicesToCheck {
-			return fmt.Errorf("device not found after checking %d devices (possible timeout)", maxDevicesToCheck)
-		}
-		checkedCount++
-
-		if device.Hostname == hostname {
+		if device.Hostname == expectedHostname {
 			if pod.Annotations == nil {
 				pod.Annotations = make(map[string]string)
 			}
@@ -217,12 +218,12 @@ func (r *PodReconciler) discoverDeviceID(ctx context.Context, pod *corev1.Pod) e
 				}
 				return fmt.Errorf("failed to update pod with device ID: %w", err)
 			}
-			logger.Info("Discovered and stored device ID", "deviceID", device.NodeID, "hostname", hostname)
+			logger.Info("Discovered and stored device ID", "deviceID", device.NodeID, "hostname", expectedHostname)
 			return nil
 		}
 	}
 
-	return fmt.Errorf("device not found for hostname: %s", hostname)
+	return fmt.Errorf("device not found for hostname: %s", expectedHostname)
 }
 
 func (r *PodReconciler) getTailscaleClient(ctx context.Context, tailnet *tailcarv1alpha1.Tailnet) (*tailscale.Client, error) {
@@ -234,12 +235,18 @@ func (r *PodReconciler) getTailscaleClient(ctx context.Context, tailnet *tailcar
 		return nil, fmt.Errorf("failed to get OAuth secret: %w", err)
 	}
 
-	clientID := string(oauthSecret.Data["client-id"])
-	clientSecret := string(oauthSecret.Data["client-secret"])
-
-	if clientID == "" || clientSecret == "" {
-		return nil, fmt.Errorf("OAuth credentials missing from secret")
+	clientIDBytes, ok := oauthSecret.Data["client-id"]
+	if !ok || len(clientIDBytes) == 0 {
+		return nil, fmt.Errorf("client-id missing or empty in OAuth secret")
 	}
+
+	clientSecretBytes, ok := oauthSecret.Data["client-secret"]
+	if !ok || len(clientSecretBytes) == 0 {
+		return nil, fmt.Errorf("client-secret missing or empty in OAuth secret")
+	}
+
+	clientID := string(clientIDBytes)
+	clientSecret := string(clientSecretBytes)
 
 	tsClient := &tailscale.Client{
 		Tailnet: tailnet.Spec.TailnetName,
@@ -270,9 +277,6 @@ func (r *PodReconciler) reconcileDeviceTags(ctx context.Context, pod *corev1.Pod
 	}
 
 	desiredTags := tailnet.Spec.Tailscale.Tags
-	if len(desiredTags) == 0 {
-		return nil
-	}
 
 	tsClient, err := r.getTailscaleClient(ctx, tailnet)
 	if err != nil {
@@ -312,12 +316,26 @@ func tagsEqual(a, b []string) bool {
 	return true
 }
 
-func buildExpectedHostname(pod *corev1.Pod, tailnet *tailcarv1alpha1.Tailnet) string {
-	prefix := tailnet.Spec.Tailscale.HostnamePrefix
-	if prefix != "" {
-		return fmt.Sprintf("%s-%s", prefix, pod.Name)
-	}
+func buildExpectedHostname(pod *corev1.Pod) string {
 	return pod.Name
+}
+
+func (r *PodReconciler) decrementInjectedPods(ctx context.Context, namespace, tailnetName string) error {
+	tailnet := &tailcarv1alpha1.Tailnet{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      tailnetName,
+		Namespace: namespace,
+	}, tailnet); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get Tailnet: %w", err)
+	}
+
+	if tailnet.Status.InjectedPods > 0 {
+		tailnet.Status.InjectedPods--
+	}
+	return r.Status().Update(ctx, tailnet)
 }
 
 // SetupWithManager sets up the controller with the Manager.

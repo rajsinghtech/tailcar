@@ -20,7 +20,7 @@ webhooks:
   sideEffects: None
   admissionReviewVersions: ["v1"]
   rules:
-  - operations: ["CREATE"]
+  - operations: ["CREATE", "UPDATE"]
     apiGroups: [""]
     apiVersions: ["v1"]
     resources: ["pods"]
@@ -30,4 +30,9 @@ webhooks:
     - key: kubernetes.io/metadata.name
       operator: NotIn
       values: ["kube-system", "kube-public", "kube-node-lease", "{{ .Release.Namespace }}"]
+    {{- if .Values.webhook.namespaceSelector.requireLabel }}
+    - key: tailcar.rajsingh.info/injection
+      operator: In
+      values: ["enabled"]
+    {{- end }}
 {{- end }}

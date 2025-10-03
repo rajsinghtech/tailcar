@@ -1,0 +1,26 @@
+{{- if .Values.webhook.enabled -}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "tailcar.fullname" . }}-validator
+  labels:
+    {{- include "tailcar.labels" . | nindent 4 }}
+    tailcar.rajsingh.info/inject-ca: "true"
+webhooks:
+- name: tailnet.tailcar.rajsingh.info
+  clientConfig:
+    service:
+      name: {{ include "tailcar.webhookServiceName" . }}
+      namespace: {{ .Release.Namespace }}
+      path: /validate-tailcar-rajsingh-info-v1alpha1-tailnet
+      port: {{ .Values.webhook.service.port }}
+  failurePolicy: Fail
+  sideEffects: None
+  admissionReviewVersions: ["v1"]
+  rules:
+  - operations: ["CREATE", "UPDATE"]
+    apiGroups: ["tailcar.rajsingh.info"]
+    apiVersions: ["v1alpha1"]
+    resources: ["tailnets"]
+    scope: "*"
+{{- end }}

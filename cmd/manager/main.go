@@ -86,16 +86,28 @@ func main() {
 		os.Exit(1)
 	}
 
+	decoder := admission.NewDecoder(mgr.GetScheme())
+
 	podMutator := &tailcarwebhook.PodMutator{
 		Client: mgr.GetClient(),
 	}
-	decoder := admission.NewDecoder(mgr.GetScheme())
 	if err := podMutator.InjectDecoder(decoder); err != nil {
-		setupLog.Error(err, "unable to inject decoder")
+		setupLog.Error(err, "unable to inject decoder into pod mutator")
 		os.Exit(1)
 	}
 	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{
 		Handler: podMutator,
+	})
+
+	tailnetValidator := &tailcarwebhook.TailnetValidator{
+		Client: mgr.GetClient(),
+	}
+	if err := tailnetValidator.InjectDecoder(decoder); err != nil {
+		setupLog.Error(err, "unable to inject decoder into tailnet validator")
+		os.Exit(1)
+	}
+	mgr.GetWebhookServer().Register("/validate-tailcar-rajsingh-info-v1alpha1-tailnet", &webhook.Admission{
+		Handler: tailnetValidator,
 	})
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

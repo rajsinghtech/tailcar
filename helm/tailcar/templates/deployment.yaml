@@ -105,11 +105,11 @@ spec:
             --namespace=${NAMESPACE} \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          # Update webhook configuration with CA bundle
-          echo "Updating MutatingWebhookConfiguration with CA bundle..."
+          # Update webhook configurations with CA bundle
+          echo "Updating webhook configurations with CA bundle..."
           CA_BUNDLE=$(cat ca.crt | base64 | tr -d '\n')
 
-          # Wait for webhook config to exist
+          # Wait for webhook configs to exist
           for i in $(seq 1 30); do
             if kubectl get mutatingwebhookconfiguration ${WEBHOOK_NAME} &>/dev/null; then
               break
@@ -118,12 +118,25 @@ spec:
             sleep 2
           done
 
+          # Patch mutating webhook
           kubectl patch mutatingwebhookconfiguration ${WEBHOOK_NAME} \
             --type='json' \
             -p='[{"op": "add", "path": "/webhooks/0/clientConfig/caBundle", "value":"'"${CA_BUNDLE}"'"}]' || \
           kubectl patch mutatingwebhookconfiguration ${WEBHOOK_NAME} \
             --type='json' \
             -p='[{"op": "replace", "path": "/webhooks/0/clientConfig/caBundle", "value":"'"${CA_BUNDLE}"'"}]'
+
+          # Patch validating webhook
+          VALIDATOR_NAME="{{ include "tailcar.fullname" . }}-validator"
+          if kubectl get validatingwebhookconfiguration ${VALIDATOR_NAME} &>/dev/null; then
+            echo "Updating ValidatingWebhookConfiguration with CA bundle..."
+            kubectl patch validatingwebhookconfiguration ${VALIDATOR_NAME} \
+              --type='json' \
+              -p='[{"op": "add", "path": "/webhooks/0/clientConfig/caBundle", "value":"'"${CA_BUNDLE}"'"}]' || \
+            kubectl patch validatingwebhookconfiguration ${VALIDATOR_NAME} \
+              --type='json' \
+              -p='[{"op": "replace", "path": "/webhooks/0/clientConfig/caBundle", "value":"'"${CA_BUNDLE}"'"}]'
+          fi
 
           echo "Webhook certificates generated and configured successfully!"
 
@@ -211,6 +224,7 @@ spec:
         secret:
           secretName: {{ include "tailcar.webhookCertSecretName" . }}
           defaultMode: 420
+          optional: true
       {{- end }}
       - name: tmp
         emptyDir: {}

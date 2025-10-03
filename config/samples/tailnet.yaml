@@ -6,7 +6,7 @@ metadata:
 spec:
   tailnetName: "-"
   oauthSecretRef:
-    name: test-tailnet-oauth
+    name: tailscale-oauth
     namespace: default
   tailscale:
     tags:

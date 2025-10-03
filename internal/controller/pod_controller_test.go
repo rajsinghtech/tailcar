@@ -194,44 +194,31 @@ func TestBuildExpectedHostname(t *testing.T) {
 	tests := []struct {
 		name     string
 		pod      *corev1.Pod
-		tailnet  *tailcarv1alpha1.Tailnet
 		expected string
 	}{
 		{
-			name: "with prefix",
+			name: "simple pod name",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-pod",
-				},
-			},
-			tailnet: &tailcarv1alpha1.Tailnet{
-				Spec: tailcarv1alpha1.TailnetSpec{
-					Tailscale: tailcarv1alpha1.TailscaleConfig{
-						HostnamePrefix: "k8s",
-					},
-				},
-			},
-			expected: "k8s-my-pod",
-		},
-		{
-			name: "without prefix",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "my-pod",
-				},
-			},
-			tailnet: &tailcarv1alpha1.Tailnet{
-				Spec: tailcarv1alpha1.TailnetSpec{
-					Tailscale: tailcarv1alpha1.TailscaleConfig{},
 				},
 			},
 			expected: "my-pod",
+		},
+		{
+			name: "pod with generated name",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "nginx-deployment-5869d7778c-9r28f",
+				},
+			},
+			expected: "nginx-deployment-5869d7778c-9r28f",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := buildExpectedHostname(tt.pod, tt.tailnet)
+			result := buildExpectedHostname(tt.pod)
 			if result != tt.expected {
 				t.Errorf("buildExpectedHostname() = %v, want %v", result, tt.expected)
 			}

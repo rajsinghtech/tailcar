@@ -64,6 +64,11 @@ webhook:
   service:
     type: ClusterIP
     port: 443
+  # Namespace selector configuration
+  namespaceSelector:
+    # If true, only namespaces with tailcar.rajsingh.info/injection=enabled are processed
+    # If false, all namespaces are processed (except system namespaces)
+    requireLabel: false
 
 # Metrics service configuration
 metrics:

@@ -27,10 +27,6 @@ To get started:
        name: my-tailnet-oauth
        namespace: {{ .Release.Namespace }}
      tailscale:
-       ephemeral: true
-       autoApprove: true
-       hostnamePrefix: "k8s"
-       userspace: false
        tags:
          - "tag:k8s"
    EOF

@@ -32,10 +32,9 @@ func TestTailnetReconciler_Reconcile(t *testing.T) {
 				Namespace: "default",
 			},
 			Tailscale: tailcarv1alpha1.TailscaleConfig{
-				AutoApprove:    true,
-				HostnamePrefix: "test",
-				Tags:           []string{"tag:k8s"},
-				Image:          "ghcr.io/tailscale/tailscale:latest",
+				AutoApprove: true,
+				Tags:        []string{"tag:k8s"},
+				Image:       "ghcr.io/tailscale/tailscale:latest",
 			},
 		},
 	}
@@ -107,6 +106,116 @@ func TestTailnetReconciler_ReconcileNotFound(t *testing.T) {
 	}
 	if result != (ctrl.Result{}) {
 		t.Errorf("expected empty result for nonexistent resource, got: %v", result)
+	}
+}
+
+func TestUpdateInjectedPodsCount(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = tailcarv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	tailnet := &tailcarv1alpha1.Tailnet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-tailnet",
+			Namespace: "default",
+		},
+		Spec: tailcarv1alpha1.TailnetSpec{
+			TailnetName: "-",
+		},
+	}
+
+	pod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "injected-pod-1",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"tailcar.rajsingh.info/injected": "true",
+				"tailcar.rajsingh.info/tailnet":  "test-tailnet",
+			},
+		},
+	}
+
+	pod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "injected-pod-2",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"tailcar.rajsingh.info/injected": "true",
+				"tailcar.rajsingh.info/tailnet":  "test-tailnet",
+			},
+		},
+	}
+
+	pod3 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "other-tailnet-pod",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"tailcar.rajsingh.info/injected": "true",
+				"tailcar.rajsingh.info/tailnet":  "other-tailnet",
+			},
+		},
+	}
+
+	pod4 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "non-injected-pod",
+			Namespace: "default",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(tailnet, pod1, pod2, pod3, pod4).
+		Build()
+
+	reconciler := &TailnetReconciler{
+		Client: fakeClient,
+		Scheme: scheme,
+	}
+
+	err := reconciler.updateInjectedPodsCount(context.Background(), tailnet)
+	if err != nil {
+		t.Errorf("updateInjectedPodsCount() error = %v", err)
+	}
+
+	if tailnet.Status.InjectedPods != 2 {
+		t.Errorf("expected InjectedPods = 2, got %d", tailnet.Status.InjectedPods)
+	}
+}
+
+func TestUpdateInjectedPodsCount_EmptyNamespace(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = tailcarv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	tailnet := &tailcarv1alpha1.Tailnet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-tailnet",
+			Namespace: "empty",
+		},
+		Spec: tailcarv1alpha1.TailnetSpec{
+			TailnetName: "-",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(tailnet).
+		Build()
+
+	reconciler := &TailnetReconciler{
+		Client: fakeClient,
+		Scheme: scheme,
+	}
+
+	err := reconciler.updateInjectedPodsCount(context.Background(), tailnet)
+	if err != nil {
+		t.Errorf("updateInjectedPodsCount() error = %v", err)
+	}
+
+	if tailnet.Status.InjectedPods != 0 {
+		t.Errorf("expected InjectedPods = 0, got %d", tailnet.Status.InjectedPods)
 	}
 }
 

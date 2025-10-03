@@ -64,7 +64,9 @@ spec:
 kubectl apply -f tailnet.yaml
 ```
 
-### Enable Sidecar Injection on Pods
+### Enable Sidecar Injection
+
+#### Option 1: Per-Pod Injection
 
 ```yaml
 apiVersion: v1
@@ -79,6 +81,22 @@ spec:
   - name: app
     image: nginx
 ```
+
+#### Option 2: Namespace-Level Injection
+
+Enable automatic injection for all pods in a namespace:
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+  labels:
+    tailcar.rajsingh.info/injection: "enabled"
+    tailcar.rajsingh.info/default-tailnet: "my-tailnet"
+```
+
+All pods created in this namespace will automatically get the Tailscale sidecar injected. Individual pods can override the tailnet by setting the `tailcar.rajsingh.info/tailnet` annotation.
 
 ```bash
 kubectl apply -f pod.yaml
