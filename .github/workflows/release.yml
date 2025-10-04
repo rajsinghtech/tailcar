@@ -173,11 +173,11 @@ jobs:
         run: |
           VERSION="${{ needs.build-image.outputs.version }}"
 
-          # Package the chart
+          # Package the chart (creates tailcar-${VERSION}.tgz)
           helm package helm/tailcar --destination ./packaged-charts
 
-          # Push to GHCR as separate tailcar-helm repository
-          helm push "./packaged-charts/tailcar-helm-${VERSION}.tgz" "oci://${{ env.REGISTRY }}/rajsinghtech"
+          # Push to GHCR with explicit name as tailcar-helm
+          helm push "./packaged-charts/tailcar-${VERSION}.tgz" "oci://${{ env.REGISTRY }}/rajsinghtech/tailcar-helm"
 
           echo "✅ Chart pushed to: oci://${{ env.REGISTRY }}/rajsinghtech/tailcar-helm:${VERSION}"
 

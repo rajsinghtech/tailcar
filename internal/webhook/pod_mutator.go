@@ -34,6 +34,7 @@ const (
 
 // +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=ignore,groups="",resources=pods,verbs=create;update,versions=v1,name=mpod.tailcar.rajsingh.info,admissionReviewVersions=v1,sideEffects=None
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update
 
 // PodMutator injects Tailscale sidecars into pods.
 type PodMutator struct {
@@ -90,15 +91,11 @@ func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 		return admission.Denied(fmt.Sprintf("tailnet %s is not ready", tailnetName))
 	}
 
-	// Verify auth key secret exists before injection
+	// Ensure auth key secret exists in the pod's namespace
 	authKeySecretName := fmt.Sprintf("%s-authkey", tailnet.Name)
-	authKeySecret := &corev1.Secret{}
-	if err := m.Client.Get(ctx, types.NamespacedName{
-		Name:      authKeySecretName,
-		Namespace: tailnet.Spec.OAuthSecretRef.Namespace,
-	}, authKeySecret); err != nil {
-		logger.Error(err, "Auth key secret not found", "secret", authKeySecretName)
-		return admission.Denied(fmt.Sprintf("auth key secret %s not found: %v", authKeySecretName, err))
+	if err := m.ensureAuthKeySecret(ctx, req.Namespace, authKeySecretName, tailnet); err != nil {
+		logger.Error(err, "Failed to ensure auth key secret in namespace", "namespace", req.Namespace)
+		return admission.Denied(fmt.Sprintf("failed to ensure auth key secret: %v", err))
 	}
 
 	mutated := pod.DeepCopy()
@@ -353,4 +350,70 @@ func buildVolumes(_ *tailcarv1alpha1.Tailnet) []corev1.Volume {
 	}
 
 	return volumes
+}
+
+func (m *PodMutator) ensureAuthKeySecret(ctx context.Context, namespace, secretName string, tailnet *tailcarv1alpha1.Tailnet) error {
+	logger := log.FromContext(ctx).WithValues("namespace", namespace, "secret", secretName)
+
+	// Check if secret already exists in the pod's namespace
+	secret := &corev1.Secret{}
+	err := m.Client.Get(ctx, types.NamespacedName{
+		Name:      secretName,
+		Namespace: namespace,
+	}, secret)
+
+	if err == nil {
+		// Secret exists, verify it has the correct data
+		if _, ok := secret.Data["TS_AUTHKEY"]; ok {
+			logger.V(1).Info("Auth key secret already exists in namespace")
+			return nil
+		}
+	}
+
+	// Get the source secret from the OAuth namespace
+	sourceSecret := &corev1.Secret{}
+	err = m.Client.Get(ctx, types.NamespacedName{
+		Name:      secretName,
+		Namespace: tailnet.Spec.OAuthSecretRef.Namespace,
+	}, sourceSecret)
+	if err != nil {
+		return fmt.Errorf("source auth key secret not found in namespace %s: %w", tailnet.Spec.OAuthSecretRef.Namespace, err)
+	}
+
+	authKey, ok := sourceSecret.Data["TS_AUTHKEY"]
+	if !ok {
+		return fmt.Errorf("TS_AUTHKEY not found in source secret")
+	}
+
+	// Create or update the secret in the pod's namespace
+	targetSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"tailcar.rajsingh.info/tailnet": tailnet.Name,
+			},
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			"TS_AUTHKEY": authKey,
+		},
+	}
+
+	if secret.Name != "" {
+		// Update existing secret
+		secret.Data = targetSecret.Data
+		if err := m.Client.Update(ctx, secret); err != nil {
+			return fmt.Errorf("failed to update auth key secret: %w", err)
+		}
+		logger.Info("Updated auth key secret in namespace")
+	} else {
+		// Create new secret
+		if err := m.Client.Create(ctx, targetSecret); err != nil {
+			return fmt.Errorf("failed to create auth key secret: %w", err)
+		}
+		logger.Info("Created auth key secret in namespace")
+	}
+
+	return nil
 }

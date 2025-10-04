@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -682,6 +683,124 @@ func TestBuildEnv(t *testing.T) {
 				t.Error("expected POD_UID env var with fieldRef to metadata.uid")
 			}
 		})
+	}
+}
+
+func TestPodMutator_Handle_CrossNamespace(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = tailcarv1alpha1.AddToScheme(scheme)
+
+	oauthNamespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "oauth-ns",
+		},
+	}
+
+	podNamespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pod-ns",
+		},
+	}
+
+	tailnet := &tailcarv1alpha1.Tailnet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-tailnet",
+		},
+		Spec: tailcarv1alpha1.TailnetSpec{
+			TailnetName: "-",
+			OAuthSecretRef: tailcarv1alpha1.SecretReference{
+				Name:      "oauth",
+				Namespace: "oauth-ns",
+			},
+			Tailscale: tailcarv1alpha1.TailscaleConfig{
+				AutoApprove: true,
+				Tags:        []string{"tag:k8s"},
+				Image:       "ghcr.io/tailscale/tailscale:latest",
+			},
+		},
+		Status: tailcarv1alpha1.TailnetStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   "Ready",
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	// Auth key secret exists in oauth namespace
+	authKeySecretSource := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-tailnet-authkey",
+			Namespace: "oauth-ns",
+		},
+		Data: map[string][]byte{
+			"TS_AUTHKEY": []byte("tskey-test"),
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(oauthNamespace, podNamespace, tailnet, authKeySecretSource).
+		WithStatusSubresource(tailnet).
+		Build()
+
+	decoder := admission.NewDecoder(scheme)
+
+	mutator := &PodMutator{
+		Client:  fakeClient,
+		decoder: decoder,
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "pod-ns",
+			Annotations: map[string]string{
+				"tailcar.rajsingh.info/inject":  "true",
+				"tailcar.rajsingh.info/tailnet": "test-tailnet",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "app",
+					Image: "nginx",
+				},
+			},
+		},
+	}
+
+	podJSON, _ := json.Marshal(pod)
+	req := admission.Request{
+		AdmissionRequest: admissionv1.AdmissionRequest{
+			Namespace: "pod-ns",
+			Object: runtime.RawExtension{
+				Raw: podJSON,
+			},
+		},
+	}
+
+	resp := mutator.Handle(context.Background(), req)
+	if !resp.Allowed {
+		t.Errorf("expected pod to be allowed, got: %v", resp.Result)
+	}
+	if len(resp.Patches) == 0 {
+		t.Error("expected patches for cross-namespace pod injection")
+	}
+
+	// Verify the authkey secret was created in the pod's namespace
+	targetSecret := &corev1.Secret{}
+	err := fakeClient.Get(context.Background(), client.ObjectKey{
+		Name:      "test-tailnet-authkey",
+		Namespace: "pod-ns",
+	}, targetSecret)
+	if err != nil {
+		t.Errorf("expected authkey secret to be created in pod namespace: %v", err)
+	}
+	if string(targetSecret.Data["TS_AUTHKEY"]) != "tskey-test" {
+		t.Error("authkey secret data does not match source")
 	}
 }
 
