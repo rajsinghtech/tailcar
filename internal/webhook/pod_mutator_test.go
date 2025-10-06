@@ -649,7 +649,7 @@ func TestBuildEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			env := buildEnv(tt.tailnet)
+			env := buildEnv(tt.tailnet, nil)
 
 			envMap := make(map[string]string)
 			for _, e := range env {
@@ -801,6 +801,191 @@ func TestPodMutator_Handle_CrossNamespace(t *testing.T) {
 	}
 	if string(targetSecret.Data["TS_AUTHKEY"]) != "tskey-test" {
 		t.Error("authkey secret data does not match source")
+	}
+}
+
+func TestPodMutator_Handle_WithTailserve(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = tailcarv1alpha1.AddToScheme(scheme)
+
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "default",
+		},
+	}
+
+	tailnet := &tailcarv1alpha1.Tailnet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-tailnet",
+		},
+		Spec: tailcarv1alpha1.TailnetSpec{
+			TailnetName: "-",
+			OAuthSecretRef: tailcarv1alpha1.SecretReference{
+				Name:      "oauth",
+				Namespace: "tailscale",
+			},
+			Tailscale: tailcarv1alpha1.TailscaleConfig{
+				AutoApprove: true,
+				Image:       "ghcr.io/tailscale/tailscale:latest",
+			},
+		},
+		Status: tailcarv1alpha1.TailnetStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   "Ready",
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	tailserve := &tailcarv1alpha1.Tailserve{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-tailserve",
+		},
+		Spec: tailcarv1alpha1.TailserveSpec{
+			ServiceName: "web-server",
+			TailnetRef:  "test-tailnet",
+			Handlers: []tailcarv1alpha1.ServiceHandler{
+				{
+					Port:     443,
+					Protocol: "https",
+					Routes: []tailcarv1alpha1.Route{
+						{
+							Path: "/",
+							Backend: tailcarv1alpha1.Backend{
+								Type:  "proxy",
+								Proxy: "http://127.0.0.1:8080",
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: tailcarv1alpha1.TailserveStatus{
+			ConfigMapName: "test-tailserve-serve-config",
+		},
+	}
+
+	serveConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-tailserve-serve-config",
+			Namespace: "tailscale",
+		},
+		Data: map[string]string{
+			"serve-config.json": `{"Services":{"svc:web-server":{"TCP":{"443":{"HTTPS":true}}}}}`,
+		},
+	}
+
+	authKeySecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-tailnet-authkey",
+			Namespace: "tailscale",
+		},
+		Data: map[string][]byte{
+			"TS_AUTHKEY": []byte("tskey-test"),
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(namespace, tailnet, tailserve, serveConfigMap, authKeySecret).
+		WithStatusSubresource(tailnet, tailserve).
+		Build()
+
+	decoder := admission.NewDecoder(scheme)
+	mutator := &PodMutator{
+		Client:  fakeClient,
+		decoder: decoder,
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"tailcar.rajsingh.info/inject":    "true",
+				"tailcar.rajsingh.info/tailnet":   "test-tailnet",
+				"tailcar.rajsingh.info/tailserve": "test-tailserve",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "app",
+					Image: "nginx",
+				},
+			},
+		},
+	}
+
+	podJSON, _ := json.Marshal(pod)
+	req := admission.Request{
+		AdmissionRequest: admissionv1.AdmissionRequest{
+			Namespace: "default",
+			Object: runtime.RawExtension{
+				Raw: podJSON,
+			},
+		},
+	}
+
+	resp := mutator.Handle(context.Background(), req)
+	if !resp.Allowed {
+		t.Errorf("expected pod to be allowed, got: %v", resp.Result)
+	}
+	if len(resp.Patches) == 0 {
+		t.Error("expected patches for tailserve pod injection")
+	}
+
+	// Verify serve config ConfigMap was created in pod namespace
+	targetConfigMap := &corev1.ConfigMap{}
+	err := fakeClient.Get(context.Background(), client.ObjectKey{
+		Name:      "test-tailserve-serve-config",
+		Namespace: "default",
+	}, targetConfigMap)
+	if err != nil {
+		t.Errorf("expected serve config ConfigMap to be created in pod namespace: %v", err)
+	}
+
+	// Verify ConfigMap has correct data
+	if _, ok := targetConfigMap.Data["serve-config.json"]; !ok {
+		t.Error("serve config ConfigMap missing serve-config.json")
+	}
+
+	// Decode patches and verify TS_SERVE_CONFIG env var is set
+	var patchedPod corev1.Pod
+	if err := json.Unmarshal(resp.Patch, &patchedPod); err == nil {
+		foundServeConfig := false
+		for _, container := range patchedPod.Spec.Containers {
+			if container.Name == "tailscale" {
+				for _, env := range container.Env {
+					if env.Name == "TS_SERVE_CONFIG" {
+						foundServeConfig = true
+						if env.Value != "/etc/tailscale/serve/serve-config.json" {
+							t.Errorf("TS_SERVE_CONFIG value = %s, want /etc/tailscale/serve/serve-config.json", env.Value)
+						}
+					}
+				}
+
+				// Verify volume mount exists
+				foundVolumeMount := false
+				for _, mount := range container.VolumeMounts {
+					if mount.Name == "tailscale-serve-config" {
+						foundVolumeMount = true
+						if mount.MountPath != "/etc/tailscale/serve" {
+							t.Errorf("Volume mount path = %s, want /etc/tailscale/serve", mount.MountPath)
+						}
+					}
+				}
+				if !foundVolumeMount {
+					t.Error("Expected tailscale-serve-config volume mount")
+				}
+			}
+		}
+		if !foundServeConfig {
+			t.Error("Expected TS_SERVE_CONFIG environment variable in tailscale container")
+		}
 	}
 }
 

@@ -70,6 +70,9 @@ type TailnetStatus struct {
 	AuthKeyCreated *metav1.Time `json:"authKeyCreated,omitempty"`
 
 	// +optional
+	MagicDNSSuffix string `json:"magicDNSSuffix,omitempty"`
+
+	// +optional
 	InjectedPods int32 `json:"injectedPods,omitempty"`
 
 	// +optional

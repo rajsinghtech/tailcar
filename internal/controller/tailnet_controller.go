@@ -20,30 +20,19 @@ import (
 )
 
 const (
-	tailnetFinalizer = "tailcar.rajsingh.info/finalizer"
-
-	// ConditionTypeReady indicates the Tailnet is ready.
-	ConditionTypeReady = "Ready"
-	// ConditionTypeOAuthValid indicates OAuth credentials are valid.
-	ConditionTypeOAuthValid = "OAuthValid"
-	// ConditionTypeAuthKeyCreated indicates auth key was created.
+	tailnetFinalizer            = "tailcar.rajsingh.info/finalizer"
+	ConditionTypeReady          = "Ready"
+	ConditionTypeOAuthValid     = "OAuthValid"
 	ConditionTypeAuthKeyCreated = "AuthKeyCreated"
 
-	// ReasonOAuthValidationFailed indicates OAuth validation failed.
 	ReasonOAuthValidationFailed = "OAuthValidationFailed"
-	// ReasonOAuthValid indicates OAuth validation succeeded.
-	ReasonOAuthValid = "OAuthValid"
-	// ReasonAuthKeyCreationFailed indicates auth key creation failed.
+	ReasonOAuthValid            = "OAuthValid"
 	ReasonAuthKeyCreationFailed = "AuthKeyCreationFailed"
-	// ReasonAuthKeyCreated indicates auth key was created.
-	ReasonAuthKeyCreated = "AuthKeyCreated"
-	// ReasonReconcileSuccess indicates reconciliation succeeded.
-	ReasonReconcileSuccess = "ReconcileSuccess"
-	// ReasonReconcileError indicates reconciliation failed.
-	ReasonReconcileError = "ReconcileError"
+	ReasonAuthKeyCreated        = "AuthKeyCreated"
+	ReasonReconcileSuccess      = "ReconcileSuccess"
+	ReasonReconcileError        = "ReconcileError"
 )
 
-// TailnetReconciler reconciles Tailnet objects.
 type TailnetReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -55,7 +44,6 @@ type TailnetReconciler struct {
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
-// Reconcile handles Tailnet reconciliation.
 func (r *TailnetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -107,13 +95,14 @@ func (r *TailnetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			ReasonAuthKeyCreationFailed, err.Error())
 	}
 
-	// Update InjectedPods count by listing pods
+	if err := r.ensureMagicDNSSuffix(ctx, tailnet, tsClient); err != nil {
+		logger.Error(err, "Failed to fetch MagicDNS suffix")
+	}
+
 	if err := r.updateInjectedPodsCount(ctx, tailnet); err != nil {
 		logger.Error(err, "Failed to update injected pods count")
 	}
 
-	// Requeue periodically to check authkey expiration
-	// Requeue at 75% of the 90-day expiration (67.5 days) to rotate before expiry
 	requeueAfter := 67*24*time.Hour + 12*time.Hour
 
 	if _, err := r.updateStatus(ctx, tailnet, metav1.ConditionTrue, ConditionTypeReady,
@@ -205,7 +194,6 @@ func (r *TailnetReconciler) ensureAuthKey(ctx context.Context, tailnet *tailcarv
 
 	if tailnet.Status.AuthKeyID != "" {
 		key, err := tsClient.Keys().Get(ctx, tailnet.Status.AuthKeyID)
-		// Rotate key if it expires in less than 14 days (or already expired/invalid/revoked)
 		rotationThreshold := time.Now().Add(14 * 24 * time.Hour)
 
 		if err == nil && !key.Invalid && key.Revoked.IsZero() && key.Expires.After(rotationThreshold) {
@@ -214,20 +202,15 @@ func (r *TailnetReconciler) ensureAuthKey(ctx context.Context, tailnet *tailcarv
 			secretKey := client.ObjectKey{Name: secretName, Namespace: tailnet.Spec.OAuthSecretRef.Namespace}
 			if err := r.Get(ctx, secretKey, secret); err != nil {
 				logger.Info("Auth key secret missing, recreating", "keyID", tailnet.Status.AuthKeyID)
-				// Secret is missing but key is valid - just recreate the secret
-				// We can't retrieve the key value from Tailscale, so we have to create a new key
 				if err := tsClient.Keys().Delete(ctx, tailnet.Status.AuthKeyID); err != nil {
 					logger.Error(err, "Failed to delete old auth key")
 				}
-				// Fall through to create new key
 			} else {
-				// Both key and secret exist and are valid (and not expiring soon)
 				logger.V(1).Info("Auth key is valid", "keyID", tailnet.Status.AuthKeyID,
 					"expires", key.Expires.Format(time.RFC3339))
 				return nil
 			}
 		} else if err == nil {
-			// Key exists but needs rotation
 			logger.Info("Auth key needs rotation", "keyID", tailnet.Status.AuthKeyID,
 				"expires", key.Expires.Format(time.RFC3339),
 				"invalid", key.Invalid, "revoked", !key.Revoked.IsZero())
@@ -244,7 +227,7 @@ func (r *TailnetReconciler) ensureAuthKey(ctx context.Context, tailnet *tailcarv
 
 	createReq := tailscale.CreateKeyRequest{
 		Capabilities:  tailscale.KeyCapabilities{},
-		ExpirySeconds: 90 * 24 * 60 * 60, // 90 days
+		ExpirySeconds: 90 * 24 * 60 * 60,
 		Description:   fmt.Sprintf("Tailcar operator %s", tailnet.Name),
 	}
 
@@ -293,7 +276,6 @@ func (r *TailnetReconciler) ensureAuthKeySecret(ctx context.Context, tailnet *ta
 		}
 		secret.Data["TS_AUTHKEY"] = []byte(authKey)
 
-		// Add labels to track ownership (can't use SetControllerReference with cluster-scoped resource)
 		if secret.Labels == nil {
 			secret.Labels = make(map[string]string)
 		}
@@ -307,6 +289,55 @@ func (r *TailnetReconciler) ensureAuthKeySecret(ctx context.Context, tailnet *ta
 	}
 
 	logger.Info("Ensured auth key secret", "secretName", secretName)
+	return nil
+}
+
+func (r *TailnetReconciler) ensureMagicDNSSuffix(ctx context.Context, tailnet *tailcarv1alpha1.Tailnet, tsClient *tailscale.Client) error {
+	logger := log.FromContext(ctx)
+
+	if tailnet.Status.MagicDNSSuffix != "" {
+		return nil
+	}
+
+	if tsClient.Tailnet == "-" {
+		devices, err := tsClient.Devices().List(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to list devices: %w", err)
+		}
+
+		if len(devices) == 0 {
+			return fmt.Errorf("no devices found to determine MagicDNS suffix")
+		}
+
+		deviceName := devices[0].Name
+		if deviceName == "" {
+			return fmt.Errorf("device has no DNS name")
+		}
+
+		parts := len(deviceName)
+		dotCount := 0
+		suffixStart := -1
+		for i := parts - 1; i >= 0; i-- {
+			if deviceName[i] == '.' {
+				dotCount++
+				if dotCount == 2 {
+					suffixStart = i + 1
+					break
+				}
+			}
+		}
+
+		if suffixStart > 0 && suffixStart < len(deviceName) {
+			tailnet.Status.MagicDNSSuffix = deviceName[suffixStart:]
+			logger.Info("Discovered MagicDNS suffix from device", "suffix", tailnet.Status.MagicDNSSuffix, "device", deviceName)
+		} else {
+			return fmt.Errorf("failed to parse MagicDNS suffix from device name: %s", deviceName)
+		}
+	} else {
+		tailnet.Status.MagicDNSSuffix = tsClient.Tailnet + ".ts.net"
+		logger.Info("Constructed MagicDNS suffix", "suffix", tailnet.Status.MagicDNSSuffix)
+	}
+
 	return nil
 }
 

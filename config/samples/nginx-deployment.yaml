@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-test
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx-test
+  template:
+    metadata:
+      labels:
+        app: nginx-test
+      annotations:
+        tailcar.rajsingh.info/inject: "true"
+        tailcar.rajsingh.info/tailnet: "test-tailnet"
+        tailcar.rajsingh.info/tailserve: "test-web-server"
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-test
+  namespace: default
+spec:
+  selector:
+    app: nginx-test
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80

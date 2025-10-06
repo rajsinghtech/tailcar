@@ -1,0 +1,15 @@
+apiVersion: tailcar.rajsingh.info/v1alpha1
+kind: Tailserve
+metadata:
+  name: test-web-server
+spec:
+  handlers:
+  - port: 443
+    protocol: https
+    routes:
+    - backend:
+        proxy: http://127.0.0.1:80
+        type: proxy
+      path: /
+  serviceName: test-web
+  tailnetRef: test-tailnet

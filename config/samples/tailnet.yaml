@@ -9,8 +9,8 @@ spec:
     namespace: default
   tailscale:
     tags:
-      - "tag:sidecar"
+      - "tag:k8s"
     env:
       - name: TS_EXTRA_ARGS
-        value: "--accept-routes"
+        value: "--accept-routes --ssh"
     image: "ghcr.io/tailscale/tailscale:latest"

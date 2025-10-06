@@ -276,6 +276,8 @@ spec:
               injectedPods:
                 format: int32
                 type: integer
+              magicDNSSuffix:
+                type: string
               observedGeneration:
                 format: int64
                 type: integer

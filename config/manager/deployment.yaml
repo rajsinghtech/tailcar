@@ -32,6 +32,15 @@ rules:
 - apiGroups: ["tailcar.rajsingh.info"]
   resources: ["tailnets/finalizers"]
   verbs: ["update"]
+- apiGroups: ["tailcar.rajsingh.info"]
+  resources: ["tailserves"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["tailcar.rajsingh.info"]
+  resources: ["tailserves/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: ["tailcar.rajsingh.info"]
+  resources: ["tailserves/finalizers"]
+  verbs: ["update"]
 - apiGroups: ["admissionregistration.k8s.io"]
   resources: ["mutatingwebhookconfigurations"]
   verbs: ["get", "list", "watch", "update", "patch"]
@@ -79,19 +88,61 @@ spec:
     spec:
       serviceAccountName: tailcar-controller-manager
       initContainers:
-      - name: cert-init
-        image: tailcar:test
-        imagePullPolicy: Never
-        command: ["/cert-init"]
-        args:
-          - --service=tailcar-webhook
-          - --namespace=tailcar-system
-          - --secret=tailcar-webhook-tls
-          - --webhook=tailcar-webhook
+      - name: cert-generator
+        image: alpine:3.20
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          apk add --no-cache openssl kubectl
+
+          SERVICE_NAME="tailcar-webhook"
+          NAMESPACE="tailcar-system"
+          SECRET_NAME="tailcar-webhook-tls"
+          WEBHOOK_NAME="tailcar-webhook"
+
+          if kubectl get secret ${SECRET_NAME} -n ${NAMESPACE} &>/dev/null; then
+            echo "Certificates exist, skipping"
+            exit 0
+          fi
+
+          CERT_DIR=$(mktemp -d)
+          cd $CERT_DIR
+
+          openssl genrsa -out ca.key 2048
+          openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt -subj "/CN=${SERVICE_NAME} CA"
+          openssl genrsa -out tls.key 2048
+          openssl req -new -key tls.key -out server.csr -subj "/CN=${SERVICE_NAME}.${NAMESPACE}.svc"
+
+          cat > server.ext <<EOF
+          subjectAltName = DNS:${SERVICE_NAME}.${NAMESPACE}.svc,DNS:${SERVICE_NAME}.${NAMESPACE}.svc.cluster.local
+          EOF
+
+          openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out tls.crt -days 3650 -sha256 -extfile server.ext
+
+          kubectl create secret generic ${SECRET_NAME} --from-file=tls.crt=tls.crt --from-file=tls.key=tls.key --from-file=ca.crt=ca.crt --namespace=${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+          CA_BUNDLE=$(cat ca.crt | base64 | tr -d '\n')
+
+          for i in $(seq 1 30); do
+            if kubectl get mutatingwebhookconfiguration ${WEBHOOK_NAME} &>/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+
+          kubectl patch mutatingwebhookconfiguration ${WEBHOOK_NAME} --type='json' -p='[{"op": "add", "path": "/webhooks/0/clientConfig/caBundle", "value":"'"${CA_BUNDLE}"'"}]' || kubectl patch mutatingwebhookconfiguration ${WEBHOOK_NAME} --type='json' -p='[{"op": "replace", "path": "/webhooks/0/clientConfig/caBundle", "value":"'"${CA_BUNDLE}"'"}]'
+
+          rm -rf $CERT_DIR
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
       containers:
       - name: manager
-        image: tailcar:test
-        imagePullPolicy: Never
+        image: ghcr.io/rajsinghtech/tailcar:latest
+        imagePullPolicy: Always
         volumeMounts:
         - name: webhook-tls
           mountPath: /tmp/k8s-webhook-server/serving-certs

@@ -29,7 +29,7 @@ webhooks:
     matchExpressions:
     - key: kubernetes.io/metadata.name
       operator: NotIn
-      values: ["kube-system", "kube-public", "kube-node-lease", "{{ .Release.Namespace }}"]
+      values: ["kube-system", "kube-public", "kube-node-lease"]
     {{- if .Values.webhook.namespaceSelector.requireLabel }}
     - key: tailcar.rajsingh.info/injection
       operator: In

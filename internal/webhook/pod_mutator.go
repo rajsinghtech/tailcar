@@ -18,37 +18,30 @@ import (
 )
 
 const (
-	// AnnotationInject enables sidecar injection when set to "true".
-	AnnotationInject = "tailcar.rajsingh.info/inject"
-	// AnnotationTailnet specifies the Tailnet resource to use.
-	AnnotationTailnet = "tailcar.rajsingh.info/tailnet"
-
-	// NamespaceLabelInject enables namespace-level injection when set to "enabled".
-	NamespaceLabelInject = "tailcar.rajsingh.info/injection"
-	// NamespaceLabelTailnet specifies the default Tailnet for the namespace.
+	AnnotationInject      = "tailcar.rajsingh.info/inject"
+	AnnotationTailnet     = "tailcar.rajsingh.info/tailnet"
+	AnnotationTailserve   = "tailcar.rajsingh.info/tailserve"
+	NamespaceLabelInject  = "tailcar.rajsingh.info/injection"
 	NamespaceLabelTailnet = "tailcar.rajsingh.info/default-tailnet"
-
-	// TailscaleSidecarName is the name of the Tailscale sidecar container.
-	TailscaleSidecarName = "tailscale"
+	TailscaleSidecarName  = "tailscale"
 )
 
 // +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=ignore,groups="",resources=pods,verbs=create;update,versions=v1,name=mpod.tailcar.rajsingh.info,admissionReviewVersions=v1,sideEffects=None
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update
+// +kubebuilder:rbac:groups=tailcar.rajsingh.info,resources=tailserves,verbs=get;list;watch
 
-// PodMutator injects Tailscale sidecars into pods.
 type PodMutator struct {
 	Client  client.Client
 	decoder *admission.Decoder
 }
 
-// InjectDecoder injects the decoder into the webhook.
 func (m *PodMutator) InjectDecoder(d *admission.Decoder) error {
 	m.decoder = d
 	return nil
 }
 
-// Handle processes the admission request and mutates pods.
 func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admission.Response {
 	logger := log.FromContext(ctx).WithValues("namespace", req.Namespace, "pod", req.Name)
 
@@ -91,15 +84,39 @@ func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 		return admission.Denied(fmt.Sprintf("tailnet %s is not ready", tailnetName))
 	}
 
-	// Ensure auth key secret exists in the pod's namespace
+	var tailserveConfigMap *corev1.ConfigMap
+	if tailserveName := getTailserveName(pod); tailserveName != "" {
+		tailserve := &tailcarv1alpha1.Tailserve{}
+		if err := m.Client.Get(ctx, types.NamespacedName{Name: tailserveName}, tailserve); err == nil {
+			if tailserve.Status.ConfigMapName != "" {
+				cm := &corev1.ConfigMap{}
+				cmKey := types.NamespacedName{
+					Name:      tailserve.Status.ConfigMapName,
+					Namespace: tailnet.Spec.OAuthSecretRef.Namespace,
+				}
+				if err := m.Client.Get(ctx, cmKey, cm); err == nil {
+					tailserveConfigMap = cm
+					logger.Info("Found Tailserve config", "tailserve", tailserveName, "configMap", cm.Name)
+				}
+			}
+		}
+	}
+
 	authKeySecretName := fmt.Sprintf("%s-authkey", tailnet.Name)
 	if err := m.ensureAuthKeySecret(ctx, req.Namespace, authKeySecretName, tailnet); err != nil {
 		logger.Error(err, "Failed to ensure auth key secret in namespace", "namespace", req.Namespace)
 		return admission.Denied(fmt.Sprintf("failed to ensure auth key secret: %v", err))
 	}
 
+	if tailserveConfigMap != nil {
+		if err := m.ensureServeConfigMap(ctx, req.Namespace, tailserveConfigMap, tailnet); err != nil {
+			logger.Error(err, "Failed to ensure serve config in namespace", "namespace", req.Namespace)
+			return admission.Denied(fmt.Sprintf("failed to ensure serve config: %v", err))
+		}
+	}
+
 	mutated := pod.DeepCopy()
-	if err := m.injectSidecar(mutated, tailnet); err != nil {
+	if err := m.injectSidecar(mutated, tailnet, tailserveConfigMap); err != nil {
 		logger.Error(err, "Failed to inject sidecar")
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
@@ -151,6 +168,15 @@ func getTailnetName(pod *corev1.Pod, namespace *corev1.Namespace) string {
 	return ""
 }
 
+func getTailserveName(pod *corev1.Pod) string {
+	if pod.Annotations != nil {
+		if tailserve, ok := pod.Annotations[AnnotationTailserve]; ok && tailserve != "" {
+			return tailserve
+		}
+	}
+	return ""
+}
+
 func getInjectionSource(pod *corev1.Pod, namespace *corev1.Namespace) string {
 	if pod.Annotations != nil {
 		if _, ok := pod.Annotations[AnnotationInject]; ok {
@@ -183,14 +209,23 @@ func isTailnetReady(tailnet *tailcarv1alpha1.Tailnet) bool {
 	return false
 }
 
-func (m *PodMutator) injectSidecar(pod *corev1.Pod, tailnet *tailcarv1alpha1.Tailnet) error {
-	env := buildEnv(tailnet)
+func (m *PodMutator) injectSidecar(pod *corev1.Pod, tailnet *tailcarv1alpha1.Tailnet, serveConfigMap *corev1.ConfigMap) error {
+	tailserveName := getTailserveName(pod)
+	var tailserve *tailcarv1alpha1.Tailserve
+	if tailserveName != "" && serveConfigMap != nil {
+		ts := &tailcarv1alpha1.Tailserve{}
+		if err := m.Client.Get(context.Background(), types.NamespacedName{Name: tailserveName}, ts); err == nil {
+			tailserve = ts
+		}
+	}
+
+	env := buildEnv(tailnet, serveConfigMap)
 	stateDir := "/var/lib/tailscale"
 	if tailnet.Spec.Tailscale.StateDir != "" {
 		stateDir = tailnet.Spec.Tailscale.StateDir
 	}
-	sidecar := buildSidecarContainer(tailnet, env, stateDir)
-	volumes := buildVolumes(tailnet)
+	sidecar := buildSidecarContainer(tailnet, env, stateDir, serveConfigMap, tailserve)
+	volumes := buildVolumes(tailnet, serveConfigMap)
 	initContainer := buildInitContainer(tailnet)
 	pod.Spec.InitContainers = append(pod.Spec.InitContainers, initContainer)
 	pod.Spec.Containers = append(pod.Spec.Containers, sidecar)
@@ -205,7 +240,7 @@ func (m *PodMutator) injectSidecar(pod *corev1.Pod, tailnet *tailcarv1alpha1.Tai
 	return nil
 }
 
-func buildEnv(tailnet *tailcarv1alpha1.Tailnet) []corev1.EnvVar {
+func buildEnv(tailnet *tailcarv1alpha1.Tailnet, serveConfigMap *corev1.ConfigMap) []corev1.EnvVar {
 	acceptDNS := "true"
 	if tailnet.Spec.Tailscale.AcceptDNS != nil && !*tailnet.Spec.Tailscale.AcceptDNS {
 		acceptDNS = "false"
@@ -275,15 +310,41 @@ func buildEnv(tailnet *tailcarv1alpha1.Tailnet) []corev1.EnvVar {
 		},
 	}
 
+	if serveConfigMap != nil {
+		env = append(env, corev1.EnvVar{
+			Name:  "TS_SERVE_CONFIG",
+			Value: "/etc/tailscale/serve/serve-config.json",
+		})
+	}
+
 	env = append(env, tailnet.Spec.Tailscale.Env...)
 
 	return env
 }
 
-func buildSidecarContainer(tailnet *tailcarv1alpha1.Tailnet, env []corev1.EnvVar, stateDir string) corev1.Container {
+func buildSidecarContainer(tailnet *tailcarv1alpha1.Tailnet, env []corev1.EnvVar, stateDir string, serveConfigMap *corev1.ConfigMap, tailserve *tailcarv1alpha1.Tailserve) corev1.Container {
 	image := tailnet.Spec.Tailscale.Image
 	if image == "" {
 		image = "ghcr.io/tailscale/tailscale:latest"
+	}
+
+	volumeMounts := []corev1.VolumeMount{
+		{
+			Name:      "tailscale-state",
+			MountPath: stateDir,
+		},
+		{
+			Name:      "dev-net-tun",
+			MountPath: "/dev/net/tun",
+		},
+	}
+
+	if serveConfigMap != nil {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "tailscale-serve-config",
+			MountPath: "/etc/tailscale/serve",
+			ReadOnly:  true,
+		})
 	}
 
 	container := corev1.Container{
@@ -291,22 +352,45 @@ func buildSidecarContainer(tailnet *tailcarv1alpha1.Tailnet, env []corev1.EnvVar
 		Image:           image,
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Env:             env,
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      "tailscale-state",
-				MountPath: stateDir,
-			},
-			{
-				Name:      "dev-net-tun",
-				MountPath: "/dev/net/tun",
-			},
-		},
+		VolumeMounts:    volumeMounts,
 		SecurityContext: &corev1.SecurityContext{
 			Privileged: func() *bool { b := true; return &b }(),
 		},
 	}
 
+	if tailserve != nil {
+		container.Lifecycle = buildAdvertiseLifecycleHook(tailserve)
+	}
+
 	return container
+}
+
+func buildAdvertiseLifecycleHook(tailserve *tailcarv1alpha1.Tailserve) *corev1.Lifecycle {
+	serviceName := fmt.Sprintf("svc:%s", tailserve.Spec.ServiceName)
+	script := fmt.Sprintf(`
+#!/bin/sh
+# Wait for tailscaled socket
+while [ ! -S /var/run/tailscale/tailscaled.sock ] && [ ! -S /tmp/tailscaled.sock ]; do
+  sleep 1
+done
+# Wait for Tailscale to be authenticated (up to 60 seconds)
+for i in $(seq 1 60); do
+  if tailscale status --json >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+# Advertise the service
+tailscale serve advertise %s
+`, serviceName)
+
+	return &corev1.Lifecycle{
+		PostStart: &corev1.LifecycleHandler{
+			Exec: &corev1.ExecAction{
+				Command: []string{"/bin/sh", "-c", script},
+			},
+		},
+	}
 }
 
 func buildInitContainer(tailnet *tailcarv1alpha1.Tailnet) corev1.Container {
@@ -329,7 +413,7 @@ func buildInitContainer(tailnet *tailcarv1alpha1.Tailnet) corev1.Container {
 	}
 }
 
-func buildVolumes(_ *tailcarv1alpha1.Tailnet) []corev1.Volume {
+func buildVolumes(_ *tailcarv1alpha1.Tailnet, serveConfigMap *corev1.ConfigMap) []corev1.Volume {
 	charDevice := corev1.HostPathCharDev
 	volumes := []corev1.Volume{
 		{
@@ -349,13 +433,70 @@ func buildVolumes(_ *tailcarv1alpha1.Tailnet) []corev1.Volume {
 		},
 	}
 
+	// Add serve config volume if provided
+	if serveConfigMap != nil {
+		volumes = append(volumes, corev1.Volume{
+			Name: "tailscale-serve-config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: serveConfigMap.Name,
+					},
+				},
+			},
+		})
+	}
+
 	return volumes
+}
+
+func (m *PodMutator) ensureServeConfigMap(ctx context.Context, namespace string, sourceConfigMap *corev1.ConfigMap, tailnet *tailcarv1alpha1.Tailnet) error {
+	logger := log.FromContext(ctx).WithValues("namespace", namespace, "configMap", sourceConfigMap.Name)
+
+	// Check if ConfigMap already exists in the pod's namespace
+	configMap := &corev1.ConfigMap{}
+	err := m.Client.Get(ctx, types.NamespacedName{
+		Name:      sourceConfigMap.Name,
+		Namespace: namespace,
+	}, configMap)
+
+	if err == nil {
+		if _, ok := configMap.Data["serve-config.json"]; ok {
+			logger.V(1).Info("Serve config ConfigMap already exists in namespace")
+			return nil
+		}
+	}
+
+	targetConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      sourceConfigMap.Name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"tailcar.rajsingh.info/tailnet": tailnet.Name,
+			},
+		},
+		Data: sourceConfigMap.Data,
+	}
+
+	if configMap.Name != "" {
+		configMap.Data = targetConfigMap.Data
+		if err := m.Client.Update(ctx, configMap); err != nil {
+			return fmt.Errorf("failed to update serve config ConfigMap: %w", err)
+		}
+		logger.Info("Updated serve config ConfigMap in namespace")
+	} else {
+		if err := m.Client.Create(ctx, targetConfigMap); err != nil {
+			return fmt.Errorf("failed to create serve config ConfigMap: %w", err)
+		}
+		logger.Info("Created serve config ConfigMap in namespace")
+	}
+
+	return nil
 }
 
 func (m *PodMutator) ensureAuthKeySecret(ctx context.Context, namespace, secretName string, tailnet *tailcarv1alpha1.Tailnet) error {
 	logger := log.FromContext(ctx).WithValues("namespace", namespace, "secret", secretName)
 
-	// Check if secret already exists in the pod's namespace
 	secret := &corev1.Secret{}
 	err := m.Client.Get(ctx, types.NamespacedName{
 		Name:      secretName,
@@ -363,14 +504,12 @@ func (m *PodMutator) ensureAuthKeySecret(ctx context.Context, namespace, secretN
 	}, secret)
 
 	if err == nil {
-		// Secret exists, verify it has the correct data
 		if _, ok := secret.Data["TS_AUTHKEY"]; ok {
 			logger.V(1).Info("Auth key secret already exists in namespace")
 			return nil
 		}
 	}
 
-	// Get the source secret from the OAuth namespace
 	sourceSecret := &corev1.Secret{}
 	err = m.Client.Get(ctx, types.NamespacedName{
 		Name:      secretName,
@@ -385,7 +524,6 @@ func (m *PodMutator) ensureAuthKeySecret(ctx context.Context, namespace, secretN
 		return fmt.Errorf("TS_AUTHKEY not found in source secret")
 	}
 
-	// Create or update the secret in the pod's namespace
 	targetSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
@@ -401,14 +539,12 @@ func (m *PodMutator) ensureAuthKeySecret(ctx context.Context, namespace, secretN
 	}
 
 	if secret.Name != "" {
-		// Update existing secret
 		secret.Data = targetSecret.Data
 		if err := m.Client.Update(ctx, secret); err != nil {
 			return fmt.Errorf("failed to update auth key secret: %w", err)
 		}
 		logger.Info("Updated auth key secret in namespace")
 	} else {
-		// Create new secret
 		if err := m.Client.Create(ctx, targetSecret); err != nil {
 			return fmt.Errorf("failed to create auth key secret: %w", err)
 		}

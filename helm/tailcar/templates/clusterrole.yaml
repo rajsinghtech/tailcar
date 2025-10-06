@@ -33,6 +33,46 @@ rules:
       - tailnets/finalizers
     verbs:
       - update
+  # Tailserve CRD permissions
+  - apiGroups:
+      - tailcar.rajsingh.info
+    resources:
+      - tailserves
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - tailcar.rajsingh.info
+    resources:
+      - tailserves/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - tailcar.rajsingh.info
+    resources:
+      - tailserves/finalizers
+    verbs:
+      - update
+  # ConfigMap permissions for serve configs
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
   # Secret permissions for OAuth and auth keys
   - apiGroups:
       - ""
