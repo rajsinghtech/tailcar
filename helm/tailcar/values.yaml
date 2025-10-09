@@ -69,6 +69,10 @@ webhook:
     # If true, only namespaces with tailcar.rajsingh.info/injection=enabled are processed
     # If false, all namespaces are processed (except system namespaces)
     requireLabel: false
+  # Certificate configuration (requires cert-manager)
+  certificate:
+    duration: 2160h # 90d
+    renewBefore: 360h # 15d
 
 # Metrics service configuration
 metrics:

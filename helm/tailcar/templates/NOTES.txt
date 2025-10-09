@@ -48,7 +48,7 @@ To get started:
 {{- if .Values.webhook.enabled }}
 
 The webhook is enabled and will inject Tailscale sidecars into annotated pods.
-TLS certificates are automatically generated and managed by the operator.
+TLS certificates are managed by cert-manager.
 
 {{- else }}
 

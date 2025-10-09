@@ -1,0 +1,32 @@
+{{- if .Values.webhook.enabled -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "tailcar.fullname" . }}-webhook-cert
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tailcar.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "tailcar.fullname" . }}-webhook-cert
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  subject:
+    organizations:
+      - tailcar
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - server auth
+  dnsNames:
+    - {{ include "tailcar.webhookServiceName" . }}
+    - {{ include "tailcar.webhookServiceName" . }}.{{ .Release.Namespace }}
+    - {{ include "tailcar.webhookServiceName" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "tailcar.webhookServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    name: {{ include "tailcar.fullname" . }}-selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+{{- end }}

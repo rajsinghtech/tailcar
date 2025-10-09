@@ -20,7 +20,14 @@
 - Kubernetes cluster (v1.20+)
 - `kubectl` configured
 - Helm 3.x (recommended)
+- [cert-manager](https://cert-manager.io/) installed (for webhook TLS)
 - Tailscale account with OAuth client
+
+### Install cert-manager
+
+```bash
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
+```
 
 ### Install with Helm (Recommended)
 

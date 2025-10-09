@@ -1,0 +1,11 @@
+{{- if .Values.webhook.enabled -}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "tailcar.fullname" . }}-selfsigned-issuer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tailcar.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+{{- end }}

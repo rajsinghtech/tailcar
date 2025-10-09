@@ -3,9 +3,10 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
   name: {{ include "tailcar.fullname" . }}-webhook
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "tailcar.fullname" . }}-webhook-cert
   labels:
     {{- include "tailcar.labels" . | nindent 4 }}
-    tailcar.rajsingh.info/inject-ca: "true"
 webhooks:
 - name: mpod.tailcar.rajsingh.info
   clientConfig:
