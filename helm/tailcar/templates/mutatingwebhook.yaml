@@ -7,7 +7,7 @@ metadata:
     {{- include "tailcar.labels" . | nindent 4 }}
     tailcar.rajsingh.info/inject-ca: "true"
 webhooks:
-- name: tailcar.rajsingh.info
+- name: mpod.tailcar.rajsingh.info
   clientConfig:
     service:
       name: {{ include "tailcar.webhookServiceName" . }}

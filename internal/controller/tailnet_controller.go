@@ -41,7 +41,7 @@ type TailnetReconciler struct {
 // +kubebuilder:rbac:groups=tailcar.rajsingh.info,resources=tailnets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=tailcar.rajsingh.info,resources=tailnets/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=tailcar.rajsingh.info,resources=tailnets/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 func (r *TailnetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
