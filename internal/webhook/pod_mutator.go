@@ -498,20 +498,13 @@ func (m *PodMutator) ensureAuthKeySecret(ctx context.Context, namespace, secretN
 	logger := log.FromContext(ctx).WithValues("namespace", namespace, "secret", secretName)
 
 	secret := &corev1.Secret{}
-	err := m.Client.Get(ctx, types.NamespacedName{
+	_ = m.Client.Get(ctx, types.NamespacedName{
 		Name:      secretName,
 		Namespace: namespace,
 	}, secret)
 
-	if err == nil {
-		if _, ok := secret.Data["TS_AUTHKEY"]; ok {
-			logger.V(1).Info("Auth key secret already exists in namespace")
-			return nil
-		}
-	}
-
 	sourceSecret := &corev1.Secret{}
-	err = m.Client.Get(ctx, types.NamespacedName{
+	err := m.Client.Get(ctx, types.NamespacedName{
 		Name:      secretName,
 		Namespace: tailnet.Spec.OAuthSecretRef.Namespace,
 	}, sourceSecret)
@@ -524,27 +517,33 @@ func (m *PodMutator) ensureAuthKeySecret(ctx context.Context, namespace, secretN
 		return fmt.Errorf("TS_AUTHKEY not found in source secret")
 	}
 
-	targetSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      secretName,
-			Namespace: namespace,
-			Labels: map[string]string{
-				"tailcar.rajsingh.info/tailnet": tailnet.Name,
-			},
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: map[string][]byte{
-			"TS_AUTHKEY": authKey,
-		},
-	}
-
 	if secret.Name != "" {
-		secret.Data = targetSecret.Data
+		if existingKey, exists := secret.Data["TS_AUTHKEY"]; exists && string(existingKey) == string(authKey) {
+			logger.V(1).Info("Auth key secret already exists and is up to date")
+			return nil
+		}
+
+		secret.Data = map[string][]byte{
+			"TS_AUTHKEY": authKey,
+		}
 		if err := m.Client.Update(ctx, secret); err != nil {
 			return fmt.Errorf("failed to update auth key secret: %w", err)
 		}
 		logger.Info("Updated auth key secret in namespace")
 	} else {
+		targetSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: namespace,
+				Labels: map[string]string{
+					"tailcar.rajsingh.info/tailnet": tailnet.Name,
+				},
+			},
+			Type: corev1.SecretTypeOpaque,
+			Data: map[string][]byte{
+				"TS_AUTHKEY": authKey,
+			},
+		}
 		if err := m.Client.Create(ctx, targetSecret); err != nil {
 			return fmt.Errorf("failed to create auth key secret: %w", err)
 		}
